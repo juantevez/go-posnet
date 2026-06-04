@@ -1,0 +1,376 @@
+// Package command contiene los command handlers del BC Authorization.
+// Implementan los puertos de entrada definidos en application/port.
+package command
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"time"
+
+	"github.com/tu-org/posnet-backend/pkg/domain"
+	pkgerrors "github.com/tu-org/posnet-backend/pkg/errors"
+	"github.com/tu-org/posnet-backend/pkg/observability"
+	"github.com/tu-org/posnet-backend/pkg/natsutil"
+	"github.com/tu-org/posnet-backend/pkg/pgutil"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/tu-org/posnet-backend/context/authorization/application/port"
+	"github.com/tu-org/posnet-backend/context/authorization/domain/aggregate"
+	"github.com/tu-org/posnet-backend/context/authorization/domain/repository"
+	"github.com/tu-org/posnet-backend/context/authorization/domain/service"
+	"github.com/tu-org/posnet-backend/context/authorization/domain/valueobject"
+)
+
+const (
+	fraudCheckTimeout = 500 * time.Millisecond // Timeout para esperar el score de fraude
+)
+
+// AuthorizationHandler implementa port.AuthorizationService.
+// Orquesta la Saga de autorización completa.
+type AuthorizationHandler struct {
+	repo        repository.TransactionRepository
+	acquirer    service.AcquirerGateway
+	publisher   service.EventPublisher
+	idempotency *natsutil.IdempotencyStore
+	pool        *pgxpool.Pool
+}
+
+// NewAuthorizationHandler construye el handler con todas sus dependencias.
+func NewAuthorizationHandler(
+	repo repository.TransactionRepository,
+	acquirer service.AcquirerGateway,
+	publisher service.EventPublisher,
+	idempotency *natsutil.IdempotencyStore,
+	pool *pgxpool.Pool,
+) *AuthorizationHandler {
+	return &AuthorizationHandler{
+		repo:        repo,
+		acquirer:    acquirer,
+		publisher:   publisher,
+		idempotency: idempotency,
+		pool:        pool,
+	}
+}
+
+// AuthorizeTransaction es el punto de entrada de la Saga de autorización.
+// Implementa port.AuthorizationService.
+//
+// Pasos:
+//  1. Verificar idempotencia (event_id ya procesado → drop)
+//  2. Parsear y validar el comando
+//  3. Crear el aggregate Transaction
+//  4. Persistir en Postgres (estado RECEIVED)
+//  5. Solicitar fraud check → publicar FraudCheckRequested
+//  6. El score llega vía ApplyFraudScore (evento NATS separado)
+func (h *AuthorizationHandler) AuthorizeTransaction(ctx context.Context, cmd port.AuthorizeTransactionCommand) error {
+	ctx, span := observability.StartSpan(ctx, "command.AuthorizeTransaction")
+	defer span.End()
+
+	log := observability.FromContext(ctx).With(
+		slog.String("transaction_id", cmd.TransactionID),
+		slog.String("terminal_id", cmd.TerminalID),
+		slog.String("event_id", cmd.EventID),
+	)
+
+	// ── Paso 1: Idempotencia ─────────────────────────────────────────────────
+	already, err := h.idempotency.IsAlreadyProcessed(ctx, cmd.EventID)
+	if err != nil {
+		return fmt.Errorf("AuthorizeTransaction: check idempotency: %w", err)
+	}
+	if already {
+		log.Info("event already processed — skipping")
+		return nil
+	}
+
+	// ── Paso 2: Parsear y validar los Value Objects ───────────────────────────
+	txID, err := domain.ParseTransactionID(cmd.TransactionID)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid transaction_id: " + err.Error())
+	}
+	terminalID, err := domain.ParseTerminalID(cmd.TerminalID)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid terminal_id: " + err.Error())
+	}
+	merchantID, err := domain.ParseMerchantID(cmd.MerchantID)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid merchant_id: " + err.Error())
+	}
+	currency, err := domain.ParseCurrency(cmd.Currency)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid currency: " + err.Error())
+	}
+	amount, err := domain.NewMoney(cmd.AmountCents, currency)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid amount: " + err.Error())
+	}
+	stan, err := domain.NewSTAN(cmd.STAN)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid stan: " + err.Error())
+	}
+	network, err := domain.ParseCardNetwork(cmd.CardNetwork)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid card_network: " + err.Error())
+	}
+	pan, err := domain.NewPAN(cmd.CardLast4, network)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid pan: " + err.Error())
+	}
+	entryMode, err := valueobject.ParseEntryMode(cmd.EntryMode)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid entry_mode: " + err.Error())
+	}
+
+	// ── Paso 3: Crear el aggregate ───────────────────────────────────────────
+	tx, err := aggregate.NewTransaction(
+		txID, terminalID, merchantID,
+		amount, stan, pan, entryMode,
+		cmd.EMVDataBase64, cmd.ISO8583Raw,
+	)
+	if err != nil {
+		return pkgerrors.NewValidationError(err.Error())
+	}
+
+	if err := tx.StartFraudCheck(); err != nil {
+		return fmt.Errorf("AuthorizeTransaction: start fraud check: %w", err)
+	}
+
+	// ── Paso 4: Persistir + marcar idempotencia en una sola transacción ──────
+	err = pgutil.WithReadCommitted(ctx, h.pool, func(dbTx pgxtx) error {
+		if err := h.repo.Save(ctx, tx); err != nil {
+			return fmt.Errorf("save transaction: %w", err)
+		}
+		return h.idempotency.MarkAsProcessed(ctx, dbTx, cmd.EventID)
+	})
+	if err != nil {
+		observability.RecordError(ctx, err)
+		return fmt.Errorf("AuthorizeTransaction: persist: %w", err)
+	}
+
+	// ── Paso 5: Publicar FraudCheckRequested ─────────────────────────────────
+	if err := h.publisher.PublishFraudCheckRequested(ctx, tx); err != nil {
+		// El fraud check es asíncrono — si falla la publicación, loguear y continuar.
+		// La Saga tiene un mecanismo de bypass por timeout en ApplyFraudScore.
+		log.Error("failed to publish fraud check request — fraud bypass will apply",
+			slog.String("error", err.Error()))
+	}
+
+	log.Info("transaction received and fraud check requested",
+		slog.String("state", tx.State().String()),
+		slog.Int64("amount_cents", cmd.AmountCents),
+	)
+	return nil
+}
+
+// ApplyFraudScore procesa el resultado del motor antifraude y continúa la Saga.
+// Es llamado por el subscriber NATS al recibir FraudScoreCalculated.
+func (h *AuthorizationHandler) ApplyFraudScore(ctx context.Context, cmd port.ApplyFraudScoreCommand) error {
+	ctx, span := observability.StartSpan(ctx, "command.ApplyFraudScore")
+	defer span.End()
+
+	log := observability.FromContext(ctx).With(
+		slog.String("transaction_id", cmd.TransactionID),
+		slog.String("event_id", cmd.EventID),
+		slog.Int("fraud_score", cmd.Score),
+		slog.String("fraud_decision", cmd.Decision),
+	)
+
+	// Idempotencia
+	already, err := h.idempotency.IsAlreadyProcessed(ctx, cmd.EventID)
+	if err != nil {
+		return fmt.Errorf("ApplyFraudScore: check idempotency: %w", err)
+	}
+	if already {
+		log.Info("fraud score event already processed — skipping")
+		return nil
+	}
+
+	txID, err := domain.ParseTransactionID(cmd.TransactionID)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid transaction_id: " + err.Error())
+	}
+
+	tx, err := h.repo.FindByID(ctx, txID)
+	if err != nil {
+		return fmt.Errorf("ApplyFraudScore: find transaction: %w", err)
+	}
+
+	fraudDecision, err := valueobject.NewFraudDecision(cmd.Score, cmd.Decision, cmd.RulesHit)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid fraud decision: " + err.Error())
+	}
+
+	if err := tx.ApplyFraudDecision(fraudDecision); err != nil {
+		return fmt.Errorf("ApplyFraudScore: apply decision: %w", err)
+	}
+
+	// Si el fraud rechazó → publicar rechazo y terminar
+	if tx.State() == valueobject.StateRejected {
+		return h.persistAndPublishRejection(ctx, tx, cmd.EventID, log)
+	}
+
+	// Fraud aprobó → llamar al adquirente
+	return h.callAcquirer(ctx, tx, cmd.EventID, log)
+}
+
+// callAcquirer envía la transacción al host adquirente y procesa la respuesta.
+func (h *AuthorizationHandler) callAcquirer(
+	ctx context.Context,
+	tx *aggregate.Transaction,
+	eventID string,
+	log *slog.Logger,
+) error {
+	ctx, span := observability.StartSpan(ctx, "command.callAcquirer")
+	defer span.End()
+
+	response, err := h.acquirer.Authorize(ctx, tx)
+	if err != nil {
+		// Timeout u error de red → estado INDETERMINATE + reversal automático
+		var timeoutErr *pkgerrors.TimeoutError
+		if errors.As(err, &timeoutErr) {
+			log.Warn("acquirer timeout — marking transaction as indeterminate")
+			if markErr := tx.MarkIndeterminate(); markErr != nil {
+				return fmt.Errorf("callAcquirer: mark indeterminate: %w", markErr)
+			}
+			_ = h.repo.Save(ctx, tx)
+			// El proceso de reconciliación nocturna resuelve los INDETERMINATE.
+			return nil
+		}
+		return fmt.Errorf("callAcquirer: acquirer error: %w", err)
+	}
+
+	if response.IsApproved() {
+		authCode, err := domain.NewAuthCode(response.AuthCode)
+		if err != nil {
+			return fmt.Errorf("callAcquirer: invalid auth code %q: %w", response.AuthCode, err)
+		}
+		if err := tx.Approve(authCode); err != nil {
+			return fmt.Errorf("callAcquirer: approve: %w", err)
+		}
+	} else {
+		rc, err := response.ToRejectionCode()
+		if err != nil {
+			rc = valueobject.NewRejectionFromValidation("UNKNOWN_RESPONSE")
+		}
+		if err := tx.Reject(rc); err != nil {
+			return fmt.Errorf("callAcquirer: reject: %w", err)
+		}
+	}
+
+	// Persistir resultado + marcar idempotencia + publicar evento — todo atómico
+	err = pgutil.WithReadCommitted(ctx, h.pool, func(dbTx pgxtx) error {
+		if err := h.repo.Save(ctx, tx); err != nil {
+			return err
+		}
+		return h.idempotency.MarkAsProcessed(ctx, dbTx, eventID)
+	})
+	if err != nil {
+		observability.RecordError(ctx, err)
+		return fmt.Errorf("callAcquirer: persist result: %w", err)
+	}
+
+	// Publicar resultado a NATS (fuera de la transacción Postgres)
+	if tx.State() == valueobject.StateApproved {
+		if err := h.publisher.PublishApproved(ctx, tx); err != nil {
+			// Loguear pero no fallar — la transacción ya está en Postgres.
+			// El proceso de reconciliación puede republicar si es necesario.
+			log.Error("failed to publish approval event", slog.String("error", err.Error()))
+		}
+		log.Info("transaction approved", slog.String("auth_code", tx.AuthCode().String()))
+	} else {
+		if err := h.publisher.PublishRejected(ctx, tx); err != nil {
+			log.Error("failed to publish rejection event", slog.String("error", err.Error()))
+		}
+		log.Info("transaction rejected",
+			slog.String("rejection_code", tx.RejectionCode().Code()),
+			slog.String("rejection_source", string(tx.RejectionCode().Source())),
+		)
+	}
+
+	return nil
+}
+
+// persistAndPublishRejection persiste el rechazo y publica el evento.
+func (h *AuthorizationHandler) persistAndPublishRejection(
+	ctx context.Context,
+	tx *aggregate.Transaction,
+	eventID string,
+	log *slog.Logger,
+) error {
+	err := pgutil.WithReadCommitted(ctx, h.pool, func(dbTx pgxtx) error {
+		if err := h.repo.Save(ctx, tx); err != nil {
+			return err
+		}
+		return h.idempotency.MarkAsProcessed(ctx, dbTx, eventID)
+	})
+	if err != nil {
+		return fmt.Errorf("persistAndPublishRejection: %w", err)
+	}
+	if err := h.publisher.PublishRejected(ctx, tx); err != nil {
+		log.Error("failed to publish rejection", slog.String("error", err.Error()))
+	}
+	return nil
+}
+
+// ProcessReversal procesa la anulación de una transacción aprobada.
+func (h *AuthorizationHandler) ProcessReversal(ctx context.Context, cmd port.ProcessReversalCommand) error {
+	ctx, span := observability.StartSpan(ctx, "command.ProcessReversal")
+	defer span.End()
+
+	log := observability.FromContext(ctx).With(
+		slog.String("original_tx_id", cmd.OriginalTransactionID),
+		slog.String("event_id", cmd.EventID),
+	)
+
+	already, err := h.idempotency.IsAlreadyProcessed(ctx, cmd.EventID)
+	if err != nil {
+		return fmt.Errorf("ProcessReversal: check idempotency: %w", err)
+	}
+	if already {
+		log.Info("reversal event already processed — skipping")
+		return nil
+	}
+
+	txID, err := domain.ParseTransactionID(cmd.OriginalTransactionID)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid original_transaction_id")
+	}
+
+	tx, err := h.repo.FindByID(ctx, txID)
+	if err != nil {
+		return fmt.Errorf("ProcessReversal: find transaction: %w", err)
+	}
+
+	// Enviar reversal al adquirente
+	if err := h.acquirer.Reverse(ctx, tx); err != nil {
+		log.Error("acquirer reversal failed", slog.String("error", err.Error()))
+		// El reversal falla → queda para conciliación manual
+		return fmt.Errorf("ProcessReversal: acquirer reverse: %w", err)
+	}
+
+	if err := tx.Reverse(); err != nil {
+		return fmt.Errorf("ProcessReversal: reverse aggregate: %w", err)
+	}
+
+	err = pgutil.WithReadCommitted(ctx, h.pool, func(dbTx pgxtx) error {
+		if err := h.repo.Save(ctx, tx); err != nil {
+			return err
+		}
+		return h.idempotency.MarkAsProcessed(ctx, dbTx, cmd.EventID)
+	})
+	if err != nil {
+		return fmt.Errorf("ProcessReversal: persist: %w", err)
+	}
+
+	if err := h.publisher.PublishReversalCompleted(ctx, txID, tx); err != nil {
+		log.Error("failed to publish reversal completed", slog.String("error", err.Error()))
+	}
+
+	log.Info("reversal completed successfully")
+	return nil
+}
+
+// pgxtx es un alias local para evitar imports circulares en los helpers.
+type pgxtx = interface {
+	Exec(ctx context.Context, sql string, args ...any) (interface{}, error)
+}

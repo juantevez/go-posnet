@@ -1,0 +1,74 @@
+package aggregate
+
+import (
+	"time"
+
+	"github.com/tu-org/posnet-backend/pkg/domain"
+	"github.com/tu-org/posnet-backend/context/authorization/domain/valueobject"
+)
+
+// ReconstituteParams contiene todos los campos necesarios para reconstruir
+// un aggregate Transaction desde la capa de persistencia.
+// Separa el constructor de creación (NewTransaction) del de reconstitución.
+type ReconstituteParams struct {
+	ID            domain.TransactionID
+	TerminalID    domain.TerminalID
+	MerchantID    domain.MerchantID
+	Amount        domain.Money
+	STAN          domain.STAN
+	PAN           domain.PAN
+	EntryMode     valueobject.EntryMode
+	State         valueobject.TransactionState
+	FraudDecision valueobject.FraudDecision
+	AuthCode      *string
+	RejectionCode  *string
+	RejectionSource *string
+	EMVDataBase64 string
+	ISO8583Raw    []byte
+	ReceivedAt    time.Time
+	AuthorizedAt  *time.Time
+	RejectedAt    *time.Time
+}
+
+// Reconstitute reconstruye un aggregate Transaction desde la base de datos.
+// A diferencia de NewTransaction, NO emite eventos de dominio ni valida
+// invariantes de creación — asume que los datos de Postgres son consistentes.
+func Reconstitute(p ReconstituteParams) *Transaction {
+	tx := &Transaction{
+		id:            p.ID,
+		terminalID:    p.TerminalID,
+		merchantID:    p.MerchantID,
+		amount:        p.Amount,
+		stan:          p.STAN,
+		pan:           p.PAN,
+		entryMode:     p.EntryMode,
+		state:         p.State,
+		fraudDecision: p.FraudDecision,
+		emvDataBase64: p.EMVDataBase64,
+		iso8583Raw:    p.ISO8583Raw,
+		receivedAt:    p.ReceivedAt,
+		authorizedAt:  p.AuthorizedAt,
+		rejectedAt:    p.RejectedAt,
+	}
+
+	if p.AuthCode != nil {
+		ac, err := domain.NewAuthCode(*p.AuthCode)
+		if err == nil {
+			tx.authCode = &ac
+		}
+	}
+
+	if p.RejectionCode != nil {
+		var rc valueobject.RejectionCode
+		if p.RejectionSource != nil && *p.RejectionSource == string(valueobject.SourceFraud) {
+			rc = valueobject.NewRejectionFromFraud()
+		} else if p.RejectionSource != nil && *p.RejectionSource == string(valueobject.SourceTimeout) {
+			rc = valueobject.NewRejectionFromTimeout()
+		} else {
+			rc, _ = valueobject.NewRejectionFromISO(*p.RejectionCode)
+		}
+		tx.rejectionCode = &rc
+	}
+
+	return tx
+}

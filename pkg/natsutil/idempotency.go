@@ -1,0 +1,52 @@
+package natsutil
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// IdempotencyStore verifica y registra event_ids procesados en Postgres.
+// Cada BC tiene su propia tabla processed_events en su schema.
+type IdempotencyStore struct {
+	pool   *pgxpool.Pool
+	schema string // ej: "authorization", "settlement"
+}
+
+// NewIdempotencyStore crea un IdempotencyStore para el schema del BC dado.
+func NewIdempotencyStore(pool *pgxpool.Pool, schema string) *IdempotencyStore {
+	return &IdempotencyStore{pool: pool, schema: schema}
+}
+
+// IsAlreadyProcessed retorna true si el eventID ya fue procesado.
+// Consulta la tabla {schema}.processed_events.
+func (s *IdempotencyStore) IsAlreadyProcessed(ctx context.Context, eventID string) (bool, error) {
+	query := fmt.Sprintf(`SELECT 1 FROM %s.processed_events WHERE event_id = $1`, s.schema)
+	var dummy int
+	err := s.pool.QueryRow(ctx, query, eventID).Scan(&dummy)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil // No existe → no procesado
+		}
+		return false, fmt.Errorf("idempotency: check event_id %q: %w", eventID, err)
+	}
+	return true, nil // Existe → ya procesado
+}
+
+// MarkAsProcessed registra el eventID como procesado.
+// DEBE llamarse dentro de la misma transacción del handler para garantizar atomicidad.
+// Si la transacción de negocio hace rollback, este registro también se revierte.
+func (s *IdempotencyStore) MarkAsProcessed(ctx context.Context, tx pgx.Tx, eventID string) error {
+	query := fmt.Sprintf(
+		`INSERT INTO %s.processed_events (event_id) VALUES ($1) ON CONFLICT DO NOTHING`,
+		s.schema,
+	)
+	_, err := tx.Exec(ctx, query, eventID)
+	if err != nil {
+		return fmt.Errorf("idempotency: mark event_id %q as processed: %w", eventID, err)
+	}
+	return nil
+}
