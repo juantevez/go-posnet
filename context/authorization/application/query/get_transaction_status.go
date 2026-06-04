@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/juantevez/posnet-backend/context/authorization/application/port"
-	"github.com/juantevez/posnet-backend/context/authorization/domain/repository"
-	"github.com/juantevez/posnet-backend/context/authorization/domain/valueobject"
-	"github.com/juantevez/posnet-backend/pkg/domain"
-	pkgerrors "github.com/juantevez/posnet-backend/pkg/errors"
-	"github.com/juantevez/posnet-backend/pkg/observability"
+	"github.com/juantevez/go-posnet/context/authorization/application/port"
+	"github.com/juantevez/go-posnet/context/authorization/domain/repository"
+	"github.com/juantevez/go-posnet/context/authorization/domain/valueobject"
+	"github.com/juantevez/go-posnet/pkg/domain"
+	pkgerrors "github.com/juantevez/go-posnet/pkg/errors"
+	"github.com/juantevez/go-posnet/pkg/observability"
 )
 
 // TransactionQueryHandler implementa port.QueryService.

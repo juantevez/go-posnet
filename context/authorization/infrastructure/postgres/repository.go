@@ -11,10 +11,10 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/juantevez/posnet-backend/context/authorization/domain/aggregate"
-	"github.com/juantevez/posnet-backend/context/authorization/domain/valueobject"
-	"github.com/juantevez/posnet-backend/pkg/domain"
-	pkgerrors "github.com/juantevez/posnet-backend/pkg/errors"
+	"github.com/juantevez/go-posnet/context/authorization/domain/aggregate"
+	"github.com/juantevez/go-posnet/context/authorization/domain/valueobject"
+	"github.com/juantevez/go-posnet/pkg/domain"
+	pkgerrors "github.com/juantevez/go-posnet/pkg/errors"
 )
 
 // TransactionRepo implementa repository.TransactionRepository usando pgx/v5.

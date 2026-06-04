@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/juantevez/posnet-backend/context/authorization/domain/event"
-	"github.com/juantevez/posnet-backend/context/authorization/domain/valueobject"
-	"github.com/juantevez/posnet-backend/pkg/domain"
+	"github.com/juantevez/go-posnet/context/authorization/domain/event"
+	"github.com/juantevez/go-posnet/context/authorization/domain/valueobject"
+	"github.com/juantevez/go-posnet/pkg/domain"
 )
 
 // Transaction es el Aggregate Root del BC Authorization.

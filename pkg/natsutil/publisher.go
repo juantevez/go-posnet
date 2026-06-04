@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/juantevez/posnet-backend/pkg/events"
-	"github.com/juantevez/posnet-backend/pkg/observability"
+	"github.com/juantevez/go-posnet/pkg/events"
+	"github.com/juantevez/go-posnet/pkg/observability"
 	"github.com/nats-io/nats.go"
 )
 

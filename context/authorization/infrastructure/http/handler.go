@@ -11,11 +11,11 @@ import (
 	"errors"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/juantevez/posnet-backend/context/authorization/application/port"
-	"github.com/juantevez/posnet-backend/pkg/domain"
-	pkgerrors "github.com/juantevez/posnet-backend/pkg/errors"
-	"github.com/juantevez/posnet-backend/pkg/observability"
-	"github.com/juantevez/posnet-backend/pkg/pgutil"
+	"github.com/juantevez/go-posnet/context/authorization/application/port"
+	"github.com/juantevez/go-posnet/pkg/domain"
+	pkgerrors "github.com/juantevez/go-posnet/pkg/errors"
+	"github.com/juantevez/go-posnet/pkg/observability"
+	"github.com/juantevez/go-posnet/pkg/pgutil"
 )
 
 // Handler contiene todos los handlers HTTP del BC.

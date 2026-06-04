@@ -68,7 +68,7 @@ func InitTracer(ctx context.Context, cfg TracerConfig) (shutdown func(context.Co
 //	ctx, span := observability.StartSpan(ctx, "repository.findByID")
 //	defer span.End()
 func StartSpan(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	tracer := otel.Tracer("posnet-backend")
+	tracer := otel.Tracer("go-posnet")
 	return tracer.Start(ctx, name, opts...)
 }
 

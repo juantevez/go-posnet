@@ -7,8 +7,8 @@ package event
 import (
 	"time"
 
-	"github.com/juantevez/posnet-backend/context/authorization/domain/valueobject"
-	"github.com/juantevez/posnet-backend/pkg/domain"
+	"github.com/juantevez/go-posnet/context/authorization/domain/valueobject"
+	"github.com/juantevez/go-posnet/pkg/domain"
 )
 
 // DomainEvent es la interfaz base de los eventos de dominio internos.

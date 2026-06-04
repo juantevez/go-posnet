@@ -3,8 +3,8 @@ package aggregate
 import (
 	"time"
 
-	"github.com/juantevez/posnet-backend/context/authorization/domain/valueobject"
-	"github.com/juantevez/posnet-backend/pkg/domain"
+	"github.com/juantevez/go-posnet/context/authorization/domain/valueobject"
+	"github.com/juantevez/go-posnet/pkg/domain"
 )
 
 // ReconstituteParams contiene todos los campos necesarios para reconstruir

@@ -5,8 +5,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/juantevez/posnet-backend/context/authorization/domain/aggregate"
-	"github.com/juantevez/posnet-backend/context/authorization/domain/valueobject"
+	"github.com/juantevez/go-posnet/context/authorization/domain/aggregate"
+	"github.com/juantevez/go-posnet/context/authorization/domain/valueobject"
 )
 
 // AcquirerGateway es el puerto de salida hacia el Host Adquirente externo.

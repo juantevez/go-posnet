@@ -7,9 +7,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/juantevez/posnet-backend/context/authorization/domain/aggregate"
-	"github.com/juantevez/posnet-backend/context/authorization/domain/valueobject"
-	"github.com/juantevez/posnet-backend/pkg/domain"
+	"github.com/juantevez/go-posnet/context/authorization/domain/aggregate"
+	"github.com/juantevez/go-posnet/context/authorization/domain/valueobject"
+	"github.com/juantevez/go-posnet/pkg/domain"
 )
 
 // TransactionRepository es el puerto de salida principal del BC Authorization.

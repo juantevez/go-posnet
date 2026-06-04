@@ -10,16 +10,16 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/juantevez/posnet-backend/context/authorization/application/port"
-	"github.com/juantevez/posnet-backend/context/authorization/domain/aggregate"
-	"github.com/juantevez/posnet-backend/context/authorization/domain/repository"
-	"github.com/juantevez/posnet-backend/context/authorization/domain/service"
-	"github.com/juantevez/posnet-backend/context/authorization/domain/valueobject"
-	"github.com/juantevez/posnet-backend/pkg/domain"
-	pkgerrors "github.com/juantevez/posnet-backend/pkg/errors"
-	"github.com/juantevez/posnet-backend/pkg/natsutil"
-	"github.com/juantevez/posnet-backend/pkg/observability"
-	"github.com/juantevez/posnet-backend/pkg/pgutil"
+	"github.com/juantevez/go-posnet/context/authorization/application/port"
+	"github.com/juantevez/go-posnet/context/authorization/domain/aggregate"
+	"github.com/juantevez/go-posnet/context/authorization/domain/repository"
+	"github.com/juantevez/go-posnet/context/authorization/domain/service"
+	"github.com/juantevez/go-posnet/context/authorization/domain/valueobject"
+	"github.com/juantevez/go-posnet/pkg/domain"
+	pkgerrors "github.com/juantevez/go-posnet/pkg/errors"
+	"github.com/juantevez/go-posnet/pkg/natsutil"
+	"github.com/juantevez/go-posnet/pkg/observability"
+	"github.com/juantevez/go-posnet/pkg/pgutil"
 )
 
 const (

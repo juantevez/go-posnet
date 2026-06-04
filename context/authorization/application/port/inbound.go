@@ -6,7 +6,7 @@ package port
 import (
 	"context"
 
-	"github.com/juantevez/posnet-backend/pkg/domain"
+	"github.com/juantevez/go-posnet/pkg/domain"
 )
 
 // AuthorizationService es el puerto de entrada principal.
