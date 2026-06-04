@@ -11,10 +11,10 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/tu-org/posnet-backend/pkg/domain"
-	pkgerrors "github.com/tu-org/posnet-backend/pkg/errors"
-	"github.com/tu-org/posnet-backend/context/authorization/domain/aggregate"
-	"github.com/tu-org/posnet-backend/context/authorization/domain/valueobject"
+	"github.com/juantevez/posnet-backend/context/authorization/domain/aggregate"
+	"github.com/juantevez/posnet-backend/context/authorization/domain/valueobject"
+	"github.com/juantevez/posnet-backend/pkg/domain"
+	pkgerrors "github.com/juantevez/posnet-backend/pkg/errors"
 )
 
 // TransactionRepo implementa repository.TransactionRepository usando pgx/v5.
@@ -194,27 +194,27 @@ func (r *TransactionRepo) ExistsByID(ctx context.Context, id domain.TransactionI
 
 // txRow es la estructura que mapea la fila de Postgres al aggregate.
 type txRow struct {
-	ID             string
-	TerminalID     string
-	MerchantID     string
-	State          string
-	AmountCents    int64
-	Currency       string
-	PanLast4       string
-	CardNetwork    string
-	EntryMode      string
-	Stan           int
-	AuthCode       *string
-	RejectionCode  *string
+	ID              string
+	TerminalID      string
+	MerchantID      string
+	State           string
+	AmountCents     int64
+	Currency        string
+	PanLast4        string
+	CardNetwork     string
+	EntryMode       string
+	Stan            int
+	AuthCode        *string
+	RejectionCode   *string
 	RejectionSource *string
-	FraudScore     *int
-	FraudDecision  *string
-	FraudRulesHit  []byte // JSONB
-	EMVDataB64     string
-	ISO8583Raw     []byte
-	CreatedAt      time.Time
-	AuthorizedAt   *time.Time
-	RejectedAt     *time.Time
+	FraudScore      *int
+	FraudDecision   *string
+	FraudRulesHit   []byte // JSONB
+	EMVDataB64      string
+	ISO8583Raw      []byte
+	CreatedAt       time.Time
+	AuthorizedAt    *time.Time
+	RejectedAt      *time.Time
 }
 
 func scanTransaction(row pgx.Row) (*aggregate.Transaction, error) {
@@ -264,22 +264,22 @@ func scanTransaction(row pgx.Row) (*aggregate.Transaction, error) {
 
 	// Reconstruir el aggregate usando el constructor de reconstitución
 	return aggregate.Reconstitute(aggregate.ReconstituteParams{
-		ID:            txID,
-		TerminalID:    terminalID,
-		MerchantID:    merchantID,
-		Amount:        amount,
-		STAN:          stan,
-		PAN:           pan,
-		EntryMode:     entryMode,
-		State:         valueobject.TransactionState(r.State),
-		FraudDecision: fraudDecision,
-		AuthCode:      r.AuthCode,
-		RejectionCode: r.RejectionCode,
+		ID:              txID,
+		TerminalID:      terminalID,
+		MerchantID:      merchantID,
+		Amount:          amount,
+		STAN:            stan,
+		PAN:             pan,
+		EntryMode:       entryMode,
+		State:           valueobject.TransactionState(r.State),
+		FraudDecision:   fraudDecision,
+		AuthCode:        r.AuthCode,
+		RejectionCode:   r.RejectionCode,
 		RejectionSource: r.RejectionSource,
-		EMVDataBase64: r.EMVDataB64,
-		ISO8583Raw:    r.ISO8583Raw,
-		ReceivedAt:    r.CreatedAt,
-		AuthorizedAt:  r.AuthorizedAt,
-		RejectedAt:    r.RejectedAt,
+		EMVDataBase64:   r.EMVDataB64,
+		ISO8583Raw:      r.ISO8583Raw,
+		ReceivedAt:      r.CreatedAt,
+		AuthorizedAt:    r.AuthorizedAt,
+		RejectedAt:      r.RejectedAt,
 	}), nil
 }

@@ -3,31 +3,31 @@ package aggregate
 import (
 	"time"
 
-	"github.com/tu-org/posnet-backend/pkg/domain"
-	"github.com/tu-org/posnet-backend/context/authorization/domain/valueobject"
+	"github.com/juantevez/posnet-backend/context/authorization/domain/valueobject"
+	"github.com/juantevez/posnet-backend/pkg/domain"
 )
 
 // ReconstituteParams contiene todos los campos necesarios para reconstruir
 // un aggregate Transaction desde la capa de persistencia.
 // Separa el constructor de creación (NewTransaction) del de reconstitución.
 type ReconstituteParams struct {
-	ID            domain.TransactionID
-	TerminalID    domain.TerminalID
-	MerchantID    domain.MerchantID
-	Amount        domain.Money
-	STAN          domain.STAN
-	PAN           domain.PAN
-	EntryMode     valueobject.EntryMode
-	State         valueobject.TransactionState
-	FraudDecision valueobject.FraudDecision
-	AuthCode      *string
-	RejectionCode  *string
+	ID              domain.TransactionID
+	TerminalID      domain.TerminalID
+	MerchantID      domain.MerchantID
+	Amount          domain.Money
+	STAN            domain.STAN
+	PAN             domain.PAN
+	EntryMode       valueobject.EntryMode
+	State           valueobject.TransactionState
+	FraudDecision   valueobject.FraudDecision
+	AuthCode        *string
+	RejectionCode   *string
 	RejectionSource *string
-	EMVDataBase64 string
-	ISO8583Raw    []byte
-	ReceivedAt    time.Time
-	AuthorizedAt  *time.Time
-	RejectedAt    *time.Time
+	EMVDataBase64   string
+	ISO8583Raw      []byte
+	ReceivedAt      time.Time
+	AuthorizedAt    *time.Time
+	RejectedAt      *time.Time
 }
 
 // Reconstitute reconstruye un aggregate Transaction desde la base de datos.

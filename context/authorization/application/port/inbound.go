@@ -6,7 +6,7 @@ package port
 import (
 	"context"
 
-	"github.com/tu-org/posnet-backend/pkg/domain"
+	"github.com/juantevez/posnet-backend/pkg/domain"
 )
 
 // AuthorizationService es el puerto de entrada principal.
@@ -76,13 +76,13 @@ type ApplyFraudScoreCommand struct {
 
 // TransactionStatusResult es el resultado de la query de estado.
 type TransactionStatusResult struct {
-	TransactionID  string
-	State          string
-	AuthCode       string // vacío si no fue aprobada
-	RejectionCode  string // vacío si fue aprobada
+	TransactionID   string
+	State           string
+	AuthCode        string // vacío si no fue aprobada
+	RejectionCode   string // vacío si fue aprobada
 	RejectionReason string
-	AmountCents    int64
-	Currency       string
-	AuthorizedAt   string
-	RejectedAt     string
+	AmountCents     int64
+	Currency        string
+	AuthorizedAt    string
+	RejectedAt      string
 }

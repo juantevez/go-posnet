@@ -9,17 +9,17 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/tu-org/posnet-backend/pkg/domain"
-	pkgerrors "github.com/tu-org/posnet-backend/pkg/errors"
-	"github.com/tu-org/posnet-backend/pkg/observability"
-	"github.com/tu-org/posnet-backend/pkg/natsutil"
-	"github.com/tu-org/posnet-backend/pkg/pgutil"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/tu-org/posnet-backend/context/authorization/application/port"
-	"github.com/tu-org/posnet-backend/context/authorization/domain/aggregate"
-	"github.com/tu-org/posnet-backend/context/authorization/domain/repository"
-	"github.com/tu-org/posnet-backend/context/authorization/domain/service"
-	"github.com/tu-org/posnet-backend/context/authorization/domain/valueobject"
+	"github.com/juantevez/posnet-backend/context/authorization/application/port"
+	"github.com/juantevez/posnet-backend/context/authorization/domain/aggregate"
+	"github.com/juantevez/posnet-backend/context/authorization/domain/repository"
+	"github.com/juantevez/posnet-backend/context/authorization/domain/service"
+	"github.com/juantevez/posnet-backend/context/authorization/domain/valueobject"
+	"github.com/juantevez/posnet-backend/pkg/domain"
+	pkgerrors "github.com/juantevez/posnet-backend/pkg/errors"
+	"github.com/juantevez/posnet-backend/pkg/natsutil"
+	"github.com/juantevez/posnet-backend/pkg/observability"
+	"github.com/juantevez/posnet-backend/pkg/pgutil"
 )
 
 const (

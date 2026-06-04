@@ -7,8 +7,8 @@ package event
 import (
 	"time"
 
-	"github.com/tu-org/posnet-backend/pkg/domain"
-	"github.com/tu-org/posnet-backend/context/authorization/domain/valueobject"
+	"github.com/juantevez/posnet-backend/context/authorization/domain/valueobject"
+	"github.com/juantevez/posnet-backend/pkg/domain"
 )
 
 // DomainEvent es la interfaz base de los eventos de dominio internos.
@@ -45,7 +45,7 @@ func NewTransactionCreated(
 	}
 }
 
-func (e TransactionCreated) EventType() string    { return "transaction.created" }
+func (e TransactionCreated) EventType() string     { return "transaction.created" }
 func (e TransactionCreated) OccurredAt() time.Time { return e.occurredAt }
 
 // ─── FraudCheckStarted ────────────────────────────────────────────────────────
@@ -59,7 +59,7 @@ func NewFraudCheckStarted(id domain.TransactionID) FraudCheckStarted {
 	return FraudCheckStarted{TransactionID: id, occurredAt: time.Now().UTC()}
 }
 
-func (e FraudCheckStarted) EventType() string    { return "fraud.check.started" }
+func (e FraudCheckStarted) EventType() string     { return "fraud.check.started" }
 func (e FraudCheckStarted) OccurredAt() time.Time { return e.occurredAt }
 
 // ─── TransactionApproved ─────────────────────────────────────────────────────
@@ -96,7 +96,7 @@ func NewTransactionApproved(
 	}
 }
 
-func (e TransactionApproved) EventType() string    { return "transaction.approved" }
+func (e TransactionApproved) EventType() string     { return "transaction.approved" }
 func (e TransactionApproved) OccurredAt() time.Time { return e.occurredAt }
 
 // ─── TransactionRejected ─────────────────────────────────────────────────────
@@ -124,7 +124,7 @@ func NewTransactionRejected(
 	}
 }
 
-func (e TransactionRejected) EventType() string    { return "transaction.rejected" }
+func (e TransactionRejected) EventType() string     { return "transaction.rejected" }
 func (e TransactionRejected) OccurredAt() time.Time { return e.occurredAt }
 
 // ─── TransactionIndeterminate ────────────────────────────────────────────────
@@ -139,7 +139,7 @@ func NewTransactionIndeterminate(id domain.TransactionID, tid domain.TerminalID)
 	return TransactionIndeterminate{TransactionID: id, TerminalID: tid, occurredAt: time.Now().UTC()}
 }
 
-func (e TransactionIndeterminate) EventType() string    { return "transaction.indeterminate" }
+func (e TransactionIndeterminate) EventType() string     { return "transaction.indeterminate" }
 func (e TransactionIndeterminate) OccurredAt() time.Time { return e.occurredAt }
 
 // ─── TransactionReversed ─────────────────────────────────────────────────────
@@ -167,5 +167,5 @@ func NewTransactionReversed(
 	}
 }
 
-func (e TransactionReversed) EventType() string    { return "transaction.reversed" }
+func (e TransactionReversed) EventType() string     { return "transaction.reversed" }
 func (e TransactionReversed) OccurredAt() time.Time { return e.occurredAt }

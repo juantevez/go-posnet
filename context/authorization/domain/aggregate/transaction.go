@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/tu-org/posnet-backend/pkg/domain"
-	"github.com/tu-org/posnet-backend/context/authorization/domain/event"
-	"github.com/tu-org/posnet-backend/context/authorization/domain/valueobject"
+	"github.com/juantevez/posnet-backend/context/authorization/domain/event"
+	"github.com/juantevez/posnet-backend/context/authorization/domain/valueobject"
+	"github.com/juantevez/posnet-backend/pkg/domain"
 )
 
 // Transaction es el Aggregate Root del BC Authorization.
@@ -24,19 +24,19 @@ type Transaction struct {
 	merchantID domain.MerchantID
 
 	// Datos financieros
-	amount  domain.Money
-	stan    domain.STAN
-	pan     domain.PAN
+	amount domain.Money
+	stan   domain.STAN
+	pan    domain.PAN
 
 	// Modo de captura
 	entryMode valueobject.EntryMode
 
 	// Estado del proceso
-	state      valueobject.TransactionState
+	state         valueobject.TransactionState
 	fraudDecision valueobject.FraudDecision
 
 	// Resultado
-	authCode      *domain.AuthCode       // Solo si APPROVED
+	authCode      *domain.AuthCode           // Solo si APPROVED
 	rejectionCode *valueobject.RejectionCode // Solo si REJECTED
 
 	// Datos EMV — opacos para el dominio, reenviados al adquirente
@@ -44,9 +44,9 @@ type Transaction struct {
 	iso8583Raw    []byte
 
 	// Timestamps
-	receivedAt    time.Time
-	authorizedAt  *time.Time
-	rejectedAt    *time.Time
+	receivedAt   time.Time
+	authorizedAt *time.Time
+	rejectedAt   *time.Time
 
 	// Eventos de dominio pendientes de publicar
 	// Se limpian después de que el adaptador los publica a NATS.
@@ -204,20 +204,20 @@ func (t *Transaction) record(e event.DomainEvent) {
 
 // ─── Getters (solo lectura) ───────────────────────────────────────────────────
 
-func (t *Transaction) ID() domain.TransactionID              { return t.id }
-func (t *Transaction) TerminalID() domain.TerminalID         { return t.terminalID }
-func (t *Transaction) MerchantID() domain.MerchantID         { return t.merchantID }
-func (t *Transaction) Amount() domain.Money                  { return t.amount }
-func (t *Transaction) STAN() domain.STAN                     { return t.stan }
-func (t *Transaction) PAN() domain.PAN                       { return t.pan }
-func (t *Transaction) EntryMode() valueobject.EntryMode      { return t.entryMode }
-func (t *Transaction) State() valueobject.TransactionState   { return t.state }
+func (t *Transaction) ID() domain.TransactionID                 { return t.id }
+func (t *Transaction) TerminalID() domain.TerminalID            { return t.terminalID }
+func (t *Transaction) MerchantID() domain.MerchantID            { return t.merchantID }
+func (t *Transaction) Amount() domain.Money                     { return t.amount }
+func (t *Transaction) STAN() domain.STAN                        { return t.stan }
+func (t *Transaction) PAN() domain.PAN                          { return t.pan }
+func (t *Transaction) EntryMode() valueobject.EntryMode         { return t.entryMode }
+func (t *Transaction) State() valueobject.TransactionState      { return t.state }
 func (t *Transaction) FraudDecision() valueobject.FraudDecision { return t.fraudDecision }
-func (t *Transaction) EMVDataBase64() string                 { return t.emvDataBase64 }
-func (t *Transaction) ISO8583Raw() []byte                    { return t.iso8583Raw }
-func (t *Transaction) ReceivedAt() time.Time                 { return t.receivedAt }
-func (t *Transaction) AuthorizedAt() *time.Time              { return t.authorizedAt }
-func (t *Transaction) RejectedAt() *time.Time                { return t.rejectedAt }
+func (t *Transaction) EMVDataBase64() string                    { return t.emvDataBase64 }
+func (t *Transaction) ISO8583Raw() []byte                       { return t.iso8583Raw }
+func (t *Transaction) ReceivedAt() time.Time                    { return t.receivedAt }
+func (t *Transaction) AuthorizedAt() *time.Time                 { return t.authorizedAt }
+func (t *Transaction) RejectedAt() *time.Time                   { return t.rejectedAt }
 
 func (t *Transaction) AuthCode() *domain.AuthCode {
 	return t.authCode

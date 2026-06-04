@@ -3,8 +3,8 @@ package service
 import (
 	"context"
 
-	"github.com/tu-org/posnet-backend/pkg/domain"
-	"github.com/tu-org/posnet-backend/context/authorization/domain/aggregate"
+	"github.com/juantevez/posnet-backend/context/authorization/domain/aggregate"
+	"github.com/juantevez/posnet-backend/pkg/domain"
 )
 
 // EventPublisher es el puerto de salida hacia NATS JetStream.

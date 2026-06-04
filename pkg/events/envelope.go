@@ -1,6 +1,3 @@
-// Package events define los contratos de integración asíncrona entre
-// Bounded Contexts. Cada evento que cruza la frontera de un BC debe
-// estar definido aquí.
 package events
 
 import (
@@ -16,15 +13,15 @@ import (
 // El consumer deserializa el envelope, inspecciona EventType,
 // y luego deserializa Data al tipo concreto usando Unwrap[T].
 type DomainEvent struct {
-	EventID       string          `json:"event_id"`        // UUID v4 — clave de idempotencia
-	EventType     string          `json:"event_type"`      // ej: "posnet.auth.approved.v1"
-	AggregateID   string          `json:"aggregate_id"`    // ID del aggregate que originó el evento
-	AggregateType string          `json:"aggregate_type"`  // ej: "Transaction"
-	CorrelationID string          `json:"correlation_id"`  // TransactionID — trazabilidad E2E
-	CausationID   string          `json:"causation_id"`    // EventID del evento que causó éste
-	OccurredAt    time.Time       `json:"occurred_at"`     // Timestamp UTC — inmutable
-	SchemaVersion int             `json:"schema_version"`  // Para evolución de esquema
-	Data          json.RawMessage `json:"data"`            // Payload específico del evento
+	EventID       string          `json:"event_id"`       // UUID v4 — clave de idempotencia
+	EventType     string          `json:"event_type"`     // ej: "posnet.auth.approved.v1"
+	AggregateID   string          `json:"aggregate_id"`   // ID del aggregate que originó el evento
+	AggregateType string          `json:"aggregate_type"` // ej: "Transaction"
+	CorrelationID string          `json:"correlation_id"` // TransactionID — trazabilidad E2E
+	CausationID   string          `json:"causation_id"`   // EventID del evento que causó éste
+	OccurredAt    time.Time       `json:"occurred_at"`    // Timestamp UTC — inmutable
+	SchemaVersion int             `json:"schema_version"` // Para evolución de esquema
+	Data          json.RawMessage `json:"data"`           // Payload específico del evento
 }
 
 // Wrap serializa un payload concreto dentro de un DomainEvent.

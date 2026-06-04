@@ -9,12 +9,12 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/juantevez/posnet-backend/context/authorization/domain/aggregate"
+	"github.com/juantevez/posnet-backend/pkg/domain"
+	"github.com/juantevez/posnet-backend/pkg/events"
+	"github.com/juantevez/posnet-backend/pkg/natsutil"
+	"github.com/juantevez/posnet-backend/pkg/observability"
 	natsclient "github.com/nats-io/nats.go"
-	"github.com/tu-org/posnet-backend/pkg/domain"
-	"github.com/tu-org/posnet-backend/pkg/events"
-	"github.com/tu-org/posnet-backend/pkg/natsutil"
-	"github.com/tu-org/posnet-backend/pkg/observability"
-	"github.com/tu-org/posnet-backend/context/authorization/domain/aggregate"
 )
 
 // ─── Publisher ────────────────────────────────────────────────────────────────

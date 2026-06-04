@@ -8,13 +8,14 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/tu-org/posnet-backend/pkg/domain"
-	pkgerrors "github.com/tu-org/posnet-backend/pkg/errors"
-	"github.com/tu-org/posnet-backend/pkg/observability"
-	"github.com/tu-org/posnet-backend/pkg/pgutil"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/tu-org/posnet-backend/context/authorization/application/port"
 	"errors"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/juantevez/posnet-backend/context/authorization/application/port"
+	"github.com/juantevez/posnet-backend/pkg/domain"
+	pkgerrors "github.com/juantevez/posnet-backend/pkg/errors"
+	"github.com/juantevez/posnet-backend/pkg/observability"
+	"github.com/juantevez/posnet-backend/pkg/pgutil"
 )
 
 // Handler contiene todos los handlers HTTP del BC.
@@ -29,9 +30,9 @@ func NewHandler(queryService port.QueryService, pool *pgxpool.Pool) *Handler {
 
 // RegisterRoutes registra todas las rutas HTTP.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /healthz",                    h.handleHealth)
-	mux.HandleFunc("GET /readyz",                     h.handleReady)
-	mux.HandleFunc("GET /transactions/{id}",          h.handleGetTransaction)
+	mux.HandleFunc("GET /healthz", h.handleHealth)
+	mux.HandleFunc("GET /readyz", h.handleReady)
+	mux.HandleFunc("GET /transactions/{id}", h.handleGetTransaction)
 }
 
 // handleHealth — liveness probe: el proceso está vivo.

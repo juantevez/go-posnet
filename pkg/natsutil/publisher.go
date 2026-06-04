@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/juantevez/posnet-backend/pkg/events"
+	"github.com/juantevez/posnet-backend/pkg/observability"
 	"github.com/nats-io/nats.go"
-	"github.com/tu-org/posnet-backend/pkg/events"
-	"github.com/tu-org/posnet-backend/pkg/observability"
 )
 
 // Publisher publica eventos de dominio a JetStream con envelope automático
@@ -61,9 +61,7 @@ func (p *Publisher) Publish(
 		return 0, fmt.Errorf("publisher: publish to %q: %w", subject, err)
 	}
 
-	observability.AddEvent(ctx, "nats.publish",
-		// atributos del span para trazabilidad
-	)
+	observability.AddEvent(ctx, "nats.publish") // atributos del span para trazabilidad
 
 	return ack.Sequence, nil
 }
