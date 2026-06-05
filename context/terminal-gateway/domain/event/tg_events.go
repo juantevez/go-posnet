@@ -4,7 +4,7 @@ package event
 import (
 	"time"
 
-	valueobject "github.com/juantevez/go-posnet/context/terminal-gateway/application/query"
+	valueobject "github.com/juantevez/go-posnet/context/terminal-gateway/domain/valueobject"
 	"github.com/juantevez/go-posnet/pkg/domain"
 )
 

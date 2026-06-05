@@ -7,9 +7,10 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/application/port"
-	valueobject "github.com/juantevez/go-posnet/context/terminal-gateway/application/query"
+	valueobject "github.com/juantevez/go-posnet/context/terminal-gateway/domain/valueobject"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/aggregate"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/repository"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/service"
@@ -191,7 +192,7 @@ func (h *SessionHandler) ApplyApproval(ctx context.Context, cmd port.ApplyApprov
 		return fmt.Errorf("ApplyApproval: approve session: %w", err)
 	}
 
-	err = pgutil.WithReadCommitted(ctx, h.pool, func(tx pgxtx) error {
+	err = pgutil.WithReadCommitted(ctx, h.pool, func(tx pgx.Tx) error {
 		if err := h.sessionRepo.Save(ctx, session); err != nil {
 			return err
 		}
@@ -239,7 +240,7 @@ func (h *SessionHandler) ApplyRejection(ctx context.Context, cmd port.ApplyRejec
 		return fmt.Errorf("ApplyRejection: reject session: %w", err)
 	}
 
-	err = pgutil.WithReadCommitted(ctx, h.pool, func(tx pgxtx) error {
+	err = pgutil.WithReadCommitted(ctx, h.pool, func(tx pgx.Tx) error {
 		if err := h.sessionRepo.Save(ctx, session); err != nil {
 			return err
 		}
@@ -325,7 +326,3 @@ func (h *SessionHandler) RequestReversal(ctx context.Context, cmd port.RequestRe
 	return h.publisher.PublishReversalRequested(ctx, origTxID, session)
 }
 
-// pgxtx alias local para evitar imports circulares en helpers.
-type pgxtx = interface {
-	Exec(ctx context.Context, sql string, args ...any) (interface{}, error)
-}

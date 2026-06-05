@@ -9,7 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	valueobject "github.com/juantevez/go-posnet/context/terminal-gateway/application/query"
+	valueobject "github.com/juantevez/go-posnet/context/terminal-gateway/domain/valueobject"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/aggregate"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/entity"
 	"github.com/juantevez/go-posnet/pkg/domain"
