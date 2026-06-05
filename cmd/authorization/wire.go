@@ -24,7 +24,7 @@ import (
 type app struct {
 	pool       *pgxpool.Pool    // tipo concreto de pgx — no pgutil.Pool
 	natsConn   *natsclient.Conn // tipo concreto de nats.go — no natsutil.Conn
-	subscriber *natsinfra.AUTH_NATS_Subscriber
+	subscriber *natsinfra.Subscriber
 	grpcSrv    *grpcserver.AuthorizationServer
 	httpSrv    *http.Server
 }
@@ -110,7 +110,7 @@ func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 	return &app{
 		pool:       pool,
 		natsConn:   natsConn,
-		subscriber: &natsinfra.AUTH_NATS_Subscriber{},
+		subscriber: subscriber,
 		grpcSrv:    grpcSrv,
 		httpSrv:    httpSrv,
 	}, nil

@@ -26,7 +26,7 @@ func NewSubscriber(
 	js natsclient.JetStreamContext,
 	handler *command.EvaluateTransactionHandler,
 ) *FD_Subscriber {
-	return FD_Subscriber{
+	return &FD_Subscriber{
 		js:      js,
 		handler: handler,
 		log:     slog.Default().With(slog.String("component", "fraud-detection.subscriber")),

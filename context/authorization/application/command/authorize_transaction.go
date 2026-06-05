@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/juantevez/go-posnet/context/authorization/application/port"
 	"github.com/juantevez/go-posnet/context/authorization/domain/aggregate"
@@ -136,7 +137,7 @@ func (h *AuthorizationHandler) AuthorizeTransaction(ctx context.Context, cmd por
 	}
 
 	// ── Paso 4: Persistir + marcar idempotencia en una sola transacción ──────
-	err = pgutil.WithReadCommitted(ctx, h.pool, func(dbTx pgxtx) error {
+	err = pgutil.WithReadCommitted(ctx, h.pool, func(dbTx pgx.Tx) error {
 		if err := h.repo.Save(ctx, tx); err != nil {
 			return fmt.Errorf("save transaction: %w", err)
 		}
@@ -258,7 +259,7 @@ func (h *AuthorizationHandler) callAcquirer(
 	}
 
 	// Persistir resultado + marcar idempotencia + publicar evento — todo atómico
-	err = pgutil.WithReadCommitted(ctx, h.pool, func(dbTx pgxtx) error {
+	err = pgutil.WithReadCommitted(ctx, h.pool, func(dbTx pgx.Tx) error {
 		if err := h.repo.Save(ctx, tx); err != nil {
 			return err
 		}
@@ -297,7 +298,7 @@ func (h *AuthorizationHandler) persistAndPublishRejection(
 	eventID string,
 	log *slog.Logger,
 ) error {
-	err := pgutil.WithReadCommitted(ctx, h.pool, func(dbTx pgxtx) error {
+	err := pgutil.WithReadCommitted(ctx, h.pool, func(dbTx pgx.Tx) error {
 		if err := h.repo.Save(ctx, tx); err != nil {
 			return err
 		}
@@ -352,7 +353,7 @@ func (h *AuthorizationHandler) ProcessReversal(ctx context.Context, cmd port.Pro
 		return fmt.Errorf("ProcessReversal: reverse aggregate: %w", err)
 	}
 
-	err = pgutil.WithReadCommitted(ctx, h.pool, func(dbTx pgxtx) error {
+	err = pgutil.WithReadCommitted(ctx, h.pool, func(dbTx pgx.Tx) error {
 		if err := h.repo.Save(ctx, tx); err != nil {
 			return err
 		}
@@ -370,7 +371,3 @@ func (h *AuthorizationHandler) ProcessReversal(ctx context.Context, cmd port.Pro
 	return nil
 }
 
-// pgxtx es un alias local para evitar imports circulares en los helpers.
-type pgxtx = interface {
-	Exec(ctx context.Context, sql string, args ...any) (interface{}, error)
-}

@@ -24,7 +24,7 @@ import (
 type app struct {
 	pool       *pgxpool.Pool
 	natsConn   *natsutil.Conn
-	subscriber *natsinfra.Subscriber
+	subscriber *natsinfra.FD_Subscriber
 	grpcSrv    *grpcserver.FraudDetectionServer
 	httpSrv    *http.Server
 }

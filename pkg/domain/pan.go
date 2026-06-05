@@ -27,6 +27,16 @@ func (n CardNetwork) IsValid() bool {
 	return ok
 }
 
+// ParseCardNetwork parsea un string y devuelve error si no es una red conocida.
+// Función exportada — usada por los repositorios al reconstruir aggregates desde Postgres.
+func ParseCardNetwork(s string) (CardNetwork, error) {
+	n := CardNetwork(s)
+	if !n.IsValid() {
+		return NetworkUnknown, fmt.Errorf("unknown card network %q", s)
+	}
+	return n, nil
+}
+
 var reFourDigits = regexp.MustCompile(`^\d{4}$`)
 
 // PAN representa el número de tarjeta de forma segura.

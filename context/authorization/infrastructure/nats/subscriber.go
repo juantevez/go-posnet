@@ -16,7 +16,7 @@ import (
 )
 
 // Subscriber registra y gestiona los durable consumers del BC Authorization.
-type AUTH_NATS_Subscriber struct {
+type Subscriber struct {
 	js      natsclient.JetStreamContext
 	handler *command.AuthorizationHandler // tipo concreto — elimina la interface ambigua
 	log     *slog.Logger
@@ -25,8 +25,8 @@ type AUTH_NATS_Subscriber struct {
 // NewSubscriber construye el Subscriber con el handler concreto.
 // Se usa el tipo concreto *command.AuthorizationHandler en lugar de una
 // interface local para evitar desincronías de firmas entre capas.
-func NewSubscriber(js natsclient.JetStreamContext, handler *command.AuthorizationHandler) *AUTH_NATS_Subscriber {
-	return &AUTH_NATS_Subscriber{
+func NewSubscriber(js natsclient.JetStreamContext, handler *command.AuthorizationHandler) *Subscriber {
+	return &Subscriber{
 		js:      js,
 		handler: handler,
 		log:     slog.Default().With(slog.String("component", "authorization.subscriber")),
@@ -34,7 +34,7 @@ func NewSubscriber(js natsclient.JetStreamContext, handler *command.Authorizatio
 }
 
 // Subscribe registra los 3 consumers del BC Authorization.
-func (s *AUTH_NATS_Subscriber) Subscribe() error {
+func (s *Subscriber) Subscribe() error {
 	consumers := []struct {
 		subject  string
 		durable  string
@@ -82,7 +82,7 @@ func (s *AUTH_NATS_Subscriber) Subscribe() error {
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
-func (s *AUTH_NATS_Subscriber) handleTransactionReceived(msg *natsclient.Msg) {
+func (s *Subscriber) handleTransactionReceived(msg *natsclient.Msg) {
 	ctx := observability.ExtractTraceContext(context.Background(), msg)
 	ctx, span := observability.StartSpan(ctx, "subscriber.handleTransactionReceived")
 	defer span.End()
@@ -128,7 +128,7 @@ func (s *AUTH_NATS_Subscriber) handleTransactionReceived(msg *natsclient.Msg) {
 	_ = msg.Ack()
 }
 
-func (s *AUTH_NATS_Subscriber) handleFraudScoreCalculated(msg *natsclient.Msg) {
+func (s *Subscriber) handleFraudScoreCalculated(msg *natsclient.Msg) {
 	ctx := observability.ExtractTraceContext(context.Background(), msg)
 	ctx, span := observability.StartSpan(ctx, "subscriber.handleFraudScoreCalculated")
 	defer span.End()

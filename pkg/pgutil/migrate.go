@@ -14,7 +14,6 @@ import (
 // Llamado en cmd/{bc}/main.go al arrancar el servicio, antes de servir tráfico.
 // Usa golang-migrate con locking distribuido (advisory lock en Postgres).
 func Migrate(ctx context.Context, pool *pgxpool.Pool, migrationsDir string) error {
-	// Obtener el DSN del pool para usarlo con golang-migrate.
 	dsn := pool.Config().ConnConfig.ConnString()
 
 	m, err := migrate.New("file://"+migrationsDir, "pgx5://"+dsn)
@@ -43,15 +42,6 @@ func MigrateDown(pool *pgxpool.Pool, migrationsDir string, steps int) error {
 
 	if err := m.Steps(-steps); err != nil && err != migrate.ErrNoChange {
 		return fmt.Errorf("pgutil: migrate down %d steps: %w", steps, err)
-	}
-	return nil
-}
-
-// HealthCheck verifica que la base de datos esté disponible.
-// Para uso en el endpoint /healthz de cada BC.
-func HealthCheck(ctx context.Context, pool *pgxpool.Pool) error {
-	if err := pool.Ping(ctx); err != nil {
-		return fmt.Errorf("postgres health check failed: %w", err)
 	}
 	return nil
 }

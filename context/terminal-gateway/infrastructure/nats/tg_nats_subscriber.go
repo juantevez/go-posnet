@@ -24,7 +24,7 @@ type TG_Subscriber struct {
 	log     *slog.Logger
 }
 
-func NewSubscriber(js natsclient.JetStreamContext, handler *command.SessionHandler) *Subscriber {
+func NewSubscriber(js natsclient.JetStreamContext, handler *command.SessionHandler) *TG_Subscriber {
 	return &TG_Subscriber{
 		js:      js,
 		handler: handler,
