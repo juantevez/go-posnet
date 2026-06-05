@@ -5,15 +5,14 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/propagation"
 )
 
 // natsCarrier adapta nats.Header para que sea compatible con
 // la interfaz TextMapCarrier de OpenTelemetry.
 type natsCarrier struct{ header nats.Header }
 
-func (c natsCarrier) Get(key string) string        { return c.header.Get(key) }
-func (c natsCarrier) Set(key, val string)           { c.header.Set(key, val) }
+func (c natsCarrier) Get(key string) string { return c.header.Get(key) }
+func (c natsCarrier) Set(key, val string)   { c.header.Set(key, val) }
 func (c natsCarrier) Keys() []string {
 	keys := make([]string, 0, len(c.header))
 	for k := range c.header {

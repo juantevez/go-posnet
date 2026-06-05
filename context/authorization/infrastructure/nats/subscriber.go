@@ -16,17 +16,17 @@ import (
 )
 
 // Subscriber registra y gestiona los durable consumers del BC Authorization.
-// Cada consumer traduce un evento NATS a un command del dominio
-// y lo delega al AuthorizationHandler de la capa de aplicación.
-type Subscriber struct {
+type AUTH_NATS_Subscriber struct {
 	js      natsclient.JetStreamContext
-	handler *command.AuthorizationHandler
+	handler *command.AuthorizationHandler // tipo concreto — elimina la interface ambigua
 	log     *slog.Logger
 }
 
-// NewSubscriber construye el Subscriber con sus dependencias.
-func NewSubscriber(js natsclient.JetStreamContext, handler *command.AuthorizationHandler) *Subscriber {
-	return &Subscriber{
+// NewSubscriber construye el Subscriber con el handler concreto.
+// Se usa el tipo concreto *command.AuthorizationHandler en lugar de una
+// interface local para evitar desincronías de firmas entre capas.
+func NewSubscriber(js natsclient.JetStreamContext, handler *command.AuthorizationHandler) *AUTH_NATS_Subscriber {
+	return &AUTH_NATS_Subscriber{
 		js:      js,
 		handler: handler,
 		log:     slog.Default().With(slog.String("component", "authorization.subscriber")),
@@ -34,8 +34,7 @@ func NewSubscriber(js natsclient.JetStreamContext, handler *command.Authorizatio
 }
 
 // Subscribe registra los 3 consumers del BC Authorization.
-// Llamado una sola vez en cmd/authorization/main.go al arrancar el servicio.
-func (s *Subscriber) Subscribe() error {
+func (s *AUTH_NATS_Subscriber) Subscribe() error {
 	consumers := []struct {
 		subject  string
 		durable  string
@@ -83,28 +82,23 @@ func (s *Subscriber) Subscribe() error {
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
-// handleTransactionReceived procesa el evento posnet.transaction.received.v1
-// y lo delega a AuthorizationHandler.AuthorizeTransaction.
-func (s *Subscriber) handleTransactionReceived(msg *natsclient.Msg) {
+func (s *AUTH_NATS_Subscriber) handleTransactionReceived(msg *natsclient.Msg) {
 	ctx := observability.ExtractTraceContext(context.Background(), msg)
 	ctx, span := observability.StartSpan(ctx, "subscriber.handleTransactionReceived")
 	defer span.End()
 
 	envelope, err := events.UnmarshalEnvelope(msg.Data)
 	if err != nil {
-		s.log.ErrorContext(ctx, "failed to unmarshal envelope",
-			slog.String("error", err.Error()),
-			slog.String("subject", msg.Subject),
-		)
-		_ = msg.Term() // Mensaje malformado — no reintentar, mover a DLQ
+		s.log.ErrorContext(ctx, "failed to unmarshal envelope", slog.String("error", err.Error()))
+		_ = msg.Term()
 		return
 	}
 
 	payload, err := events.Unwrap[events.TransactionReceivedPayload](envelope)
 	if err != nil {
-		s.log.ErrorContext(ctx, "failed to unwrap TransactionReceived payload",
-			slog.String("error", err.Error()),
+		s.log.ErrorContext(ctx, "failed to unwrap TransactionReceived",
 			slog.String("event_id", envelope.EventID),
+			slog.String("error", err.Error()),
 		)
 		_ = msg.Term()
 		return
@@ -134,9 +128,7 @@ func (s *Subscriber) handleTransactionReceived(msg *natsclient.Msg) {
 	_ = msg.Ack()
 }
 
-// handleFraudScoreCalculated procesa el evento posnet.fraud.score-calculated.v1
-// y lo delega a AuthorizationHandler.ApplyFraudScore.
-func (s *Subscriber) handleFraudScoreCalculated(msg *natsclient.Msg) {
+func (s *AUTH_NATS_Subscriber) handleFraudScoreCalculated(msg *natsclient.Msg) {
 	ctx := observability.ExtractTraceContext(context.Background(), msg)
 	ctx, span := observability.StartSpan(ctx, "subscriber.handleFraudScoreCalculated")
 	defer span.End()
@@ -150,9 +142,9 @@ func (s *Subscriber) handleFraudScoreCalculated(msg *natsclient.Msg) {
 
 	payload, err := events.Unwrap[events.FraudScoreCalculatedPayload](envelope)
 	if err != nil {
-		s.log.ErrorContext(ctx, "failed to unwrap FraudScoreCalculated payload",
-			slog.String("error", err.Error()),
+		s.log.ErrorContext(ctx, "failed to unwrap FraudScoreCalculated",
 			slog.String("event_id", envelope.EventID),
+			slog.String("error", err.Error()),
 		)
 		_ = msg.Term()
 		return
@@ -174,8 +166,6 @@ func (s *Subscriber) handleFraudScoreCalculated(msg *natsclient.Msg) {
 	_ = msg.Ack()
 }
 
-// handleReversalRequested procesa el evento posnet.transaction.reversal-requested.v1
-// y lo delega a AuthorizationHandler.ProcessReversal.
 func (s *Subscriber) handleReversalRequested(msg *natsclient.Msg) {
 	ctx := observability.ExtractTraceContext(context.Background(), msg)
 	ctx, span := observability.StartSpan(ctx, "subscriber.handleReversalRequested")
@@ -190,9 +180,9 @@ func (s *Subscriber) handleReversalRequested(msg *natsclient.Msg) {
 
 	payload, err := events.Unwrap[events.ReversalRequestedPayload](envelope)
 	if err != nil {
-		s.log.ErrorContext(ctx, "failed to unwrap ReversalRequested payload",
-			slog.String("error", err.Error()),
+		s.log.ErrorContext(ctx, "failed to unwrap ReversalRequested",
 			slog.String("event_id", envelope.EventID),
+			slog.String("error", err.Error()),
 		)
 		_ = msg.Term()
 		return
@@ -216,11 +206,7 @@ func (s *Subscriber) handleReversalRequested(msg *natsclient.Msg) {
 	_ = msg.Ack()
 }
 
-// ─── Helper ───────────────────────────────────────────────────────────────────
-
-// nak decide si hacer Nak (reintento) o Term (mover a DLQ) según el tipo de error.
-//   - Errores de validación o conflicto → Term (no tiene sentido reintentar)
-//   - Errores de infraestructura o timeout → Nak con backoff (transitorio)
+// nak decide Nak (reintento) o Term (DLQ) según el tipo de error.
 func (s *Subscriber) nak(ctx context.Context, msg *natsclient.Msg, err error, eventID string) {
 	observability.RecordError(ctx, err)
 
@@ -236,7 +222,6 @@ func (s *Subscriber) nak(ctx context.Context, msg *natsclient.Msg, err error, ev
 		return
 	}
 
-	// Error transitorio — NATS reentregará con backoff exponencial
 	s.log.WarnContext(ctx, "transient error — nacking for retry",
 		slog.String("event_id", eventID),
 		slog.String("error", err.Error()),

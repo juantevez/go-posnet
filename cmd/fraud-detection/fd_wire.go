@@ -8,28 +8,29 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/juantevez/go-posnet/context/authorization/application/command"
-	"github.com/juantevez/go-posnet/context/authorization/application/query"
-	"github.com/juantevez/go-posnet/context/authorization/config"
-	grpcserver "github.com/juantevez/go-posnet/context/authorization/infrastructure/grpc/server"
-	httpinfra "github.com/juantevez/go-posnet/context/authorization/infrastructure/http"
-	natsinfra "github.com/juantevez/go-posnet/context/authorization/infrastructure/nats"
-	pginfra "github.com/juantevez/go-posnet/context/authorization/infrastructure/postgres"
+	"github.com/juantevez/go-posnet/context/fraud-detection/application/command"
+	"github.com/juantevez/go-posnet/context/fraud-detection/application/query"
+	"github.com/juantevez/go-posnet/context/fraud-detection/config"
+	"github.com/juantevez/go-posnet/context/fraud-detection/domain/service"
+	grpcserver "github.com/juantevez/go-posnet/context/fraud-detection/infrastructure/grpc/server"
+	httpinfra "github.com/juantevez/go-posnet/context/fraud-detection/infrastructure/http"
+	natsinfra "github.com/juantevez/go-posnet/context/fraud-detection/infrastructure/nats"
+	pginfra "github.com/juantevez/go-posnet/context/fraud-detection/infrastructure/postgres"
 	"github.com/juantevez/go-posnet/pkg/natsutil"
 	"github.com/juantevez/go-posnet/pkg/pgutil"
-	natsclient "github.com/nats-io/nats.go"
 )
 
 // app agrupa todos los componentes del servicio y sus recursos abiertos.
 type app struct {
-	pool       *pgxpool.Pool    // tipo concreto de pgx — no pgutil.Pool
-	natsConn   *natsclient.Conn // tipo concreto de nats.go — no natsutil.Conn
-	subscriber *natsinfra.AUTH_NATS_Subscriber
-	grpcSrv    *grpcserver.AuthorizationServer
+	pool       *pgxpool.Pool
+	natsConn   *natsutil.Conn
+	subscriber *natsinfra.Subscriber
+	grpcSrv    *grpcserver.FraudDetectionServer
 	httpSrv    *http.Server
 }
 
-// wire construye el grafo de dependencias completo del BC Authorization.
+// wire construye el grafo de dependencias completo del BC Fraud Detection.
+// Orden: infraestructura → repositorios → motor de reglas → handlers → adaptadores.
 func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 
 	// ── PostgreSQL ─────────────────────────────────────────────────────────────
@@ -79,38 +80,61 @@ func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 	slog.Info("NATS ready — streams and consumers configured")
 
 	// ── Infraestructura ────────────────────────────────────────────────────────
-	txRepo := pginfra.NewTransactionRepo(pool)
-	idempotency := natsutil.NewIdempotencyStore(pool, "authorization")
+	fraudCaseRepo := pginfra.NewFraudCaseRepo(pool)
+	ruleRepo := pginfra.NewFraudRuleRepo(pool, cfg.Engine.RulesCacheTTL)
+	historyRepo := pginfra.NewTransactionHistoryRepo(pool)
+	idempotency := natsutil.NewIdempotencyStore(pool, "fraud_detection")
 	natsPub := natsutil.NewPublisher(js)
-	eventPub := natsinfra.NewEventPublisher(natsPub)
+	eventPublisher := natsinfra.NewEventPublisher(natsPub)
+
+	// ── Motor de reglas ────────────────────────────────────────────────────────
+	// El RuleEngine es el Domain Service más importante del BC.
+	// Recibe el timeout configurado desde config.Engine.EvalTimeout.
+	engine := service.NewRuleEngine(ruleRepo, historyRepo, cfg.Engine.EvalTimeout)
+
+	// Precalentar el cache de reglas al arrancar para evitar latencia en la
+	// primera transacción. Si falla, el motor las cargará en la primera eval.
+	if rules, err := ruleRepo.FindAllActive(ctx); err == nil {
+		slog.Info("fraud rules loaded", slog.Int("count", len(rules)))
+	} else {
+		slog.Warn("could not preload fraud rules — will load on first evaluation",
+			slog.String("error", err.Error()),
+		)
+	}
 
 	// ── Aplicación ─────────────────────────────────────────────────────────────
-	authHandler := command.NewAuthorizationHandler(
-		txRepo,
-		nil, // acquirerGW — reemplazar con instancia real cuando esté implementado
-		eventPub,
+	evaluateHandler := command.NewEvaluateTransactionHandler(
+		fraudCaseRepo,
+		engine,
+		eventPublisher,
 		idempotency,
 		pool,
 	)
-	queryHandler := query.NewTransactionQueryHandler(txRepo)
+	adminHandler := command.NewAdminHandler(ruleRepo, fraudCaseRepo)
+	queryHandler := query.NewFraudQueryHandler(fraudCaseRepo, ruleRepo)
 
 	// ── Adaptadores de entrada ─────────────────────────────────────────────────
-	subscriber := natsinfra.NewSubscriber(js, authHandler)
-	grpcSrv := grpcserver.NewAuthorizationServer(queryHandler)
 
-	router := httpinfra.NewRouter(queryHandler, pool)
+	// NATS Subscriber — consume FraudCheckRequested y publica FraudScoreCalculated
+	subscriber := natsinfra.NewSubscriber(js, evaluateHandler)
+
+	// gRPC Server — placeholder para servicios futuros
+	grpcSrv := grpcserver.NewFraudDetectionServer()
+
+	// HTTP Server — healthz, readyz, metrics, gestión de reglas (admin)
+	router := httpinfra.NewRouter(queryHandler, adminHandler, pool)
 	httpSrv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.HTTPPort),
 		Handler:      router,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  30 * time.Second,
 	}
 
 	return &app{
 		pool:       pool,
 		natsConn:   natsConn,
-		subscriber: &natsinfra.AUTH_NATS_Subscriber{},
+		subscriber: subscriber,
 		grpcSrv:    grpcSrv,
 		httpSrv:    httpSrv,
 	}, nil
@@ -118,18 +142,23 @@ func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 
 // start arranca todos los servidores en goroutines independientes.
 func (a *app) start(ctx context.Context) error {
+	// NATS consumer — consume FraudCheckRequested
 	if err := a.subscriber.Subscribe(); err != nil {
 		return fmt.Errorf("start: subscribe NATS consumers: %w", err)
 	}
-	slog.Info("NATS consumers active")
+	slog.Info("NATS consumer active",
+		slog.String("durable", "fraud-check-consumer"),
+	)
 
+	// gRPC server
 	go func() {
-		if err := grpcserver.Start(a.grpcSrv, 9090); err != nil {
+		if err := grpcserver.Start(a.grpcSrv, 9092); err != nil {
 			slog.Error("gRPC server stopped", slog.String("error", err.Error()))
 		}
 	}()
-	slog.Info("gRPC server starting", slog.Int("port", 9090))
+	slog.Info("gRPC server starting", slog.Int("port", 9092))
 
+	// HTTP server
 	go func() {
 		if err := a.httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("HTTP server stopped", slog.String("error", err.Error()))

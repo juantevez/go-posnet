@@ -117,7 +117,7 @@ func (p *EventPublisher) PublishReversalCompleted(ctx context.Context, txID doma
 // ─── Subscriber ───────────────────────────────────────────────────────────────
 
 // Subscriber consume eventos de NATS y los traduce a commands del BC.
-type Subscriber struct {
+type AUTH_Subscriber struct {
 	js          natsclient.JetStreamContext
 	authHandler AuthorizationService
 	log         *slog.Logger
@@ -130,8 +130,8 @@ type AuthorizationService interface {
 	ProcessReversal(ctx context.Context, cmd interface{}) error
 }
 
-func NewSubscriber(js natsclient.JetStreamContext, authHandler AuthorizationService) *Subscriber {
-	return &Subscriber{
+func NewSubscriber(js natsclient.JetStreamContext, authHandler AuthorizationService) *AUTH_Subscriber {
+	return &AUTH_Subscriber{
 		js:          js,
 		authHandler: authHandler,
 		log:         slog.Default().With(slog.String("component", "auth.subscriber")),
@@ -139,7 +139,7 @@ func NewSubscriber(js natsclient.JetStreamContext, authHandler AuthorizationServ
 }
 
 // Subscribe registra todos los consumers del BC Authorization.
-func (s *Subscriber) Subscribe() error {
+func (s *AUTH_Subscriber) Subscribe() error {
 	// Consumer: TransactionReceived → AuthorizeTransaction
 	if _, err := s.js.QueueSubscribe(
 		events.SubjectTransactionReceived,
@@ -183,7 +183,7 @@ func (s *Subscriber) Subscribe() error {
 	return nil
 }
 
-func (s *Subscriber) handleTransactionReceived(msg *natsclient.Msg) {
+func (s *AUTH_Subscriber) handleTransactionReceived(msg *natsclient.Msg) {
 	// Extraer trace context de los headers del mensaje
 	ctx := observability.ExtractTraceContext(context.Background(), msg)
 	ctx, span := observability.StartSpan(ctx, "subscriber.handleTransactionReceived")
@@ -215,7 +215,7 @@ func (s *Subscriber) handleTransactionReceived(msg *natsclient.Msg) {
 	_ = msg.Ack()
 }
 
-func (s *Subscriber) handleFraudScoreCalculated(msg *natsclient.Msg) {
+func (s *AUTH_Subscriber) handleFraudScoreCalculated(msg *natsclient.Msg) {
 	ctx := observability.ExtractTraceContext(context.Background(), msg)
 	ctx, span := observability.StartSpan(ctx, "subscriber.handleFraudScoreCalculated")
 	defer span.End()
@@ -244,7 +244,7 @@ func (s *Subscriber) handleFraudScoreCalculated(msg *natsclient.Msg) {
 	_ = msg.Ack()
 }
 
-func (s *Subscriber) handleReversalRequested(msg *natsclient.Msg) {
+func (s *AUTH_Subscriber) handleReversalRequested(msg *natsclient.Msg) {
 	ctx := observability.ExtractTraceContext(context.Background(), msg)
 	ctx, span := observability.StartSpan(ctx, "subscriber.handleReversalRequested")
 	defer span.End()

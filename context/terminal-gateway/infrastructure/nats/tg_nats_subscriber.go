@@ -18,14 +18,14 @@ import (
 // Subscriber registra y gestiona los durable consumers del BC Terminal Gateway.
 // Consume los resultados de autorización publicados por el BC Authorization
 // y los entrega al terminal vía WebSocket.
-type Subscriber struct {
+type TG_Subscriber struct {
 	js      natsclient.JetStreamContext
 	handler *command.SessionHandler
 	log     *slog.Logger
 }
 
 func NewSubscriber(js natsclient.JetStreamContext, handler *command.SessionHandler) *Subscriber {
-	return &Subscriber{
+	return &TG_Subscriber{
 		js:      js,
 		handler: handler,
 		log:     slog.Default().With(slog.String("component", "terminal-gateway.subscriber")),
@@ -34,7 +34,7 @@ func NewSubscriber(js natsclient.JetStreamContext, handler *command.SessionHandl
 
 // Subscribe registra el consumer del BC Terminal Gateway.
 // Consume posnet.auth.> para recibir aprobaciones y rechazos.
-func (s *Subscriber) Subscribe() error {
+func (s *TG_Subscriber) Subscribe() error {
 	_, err := s.js.QueueSubscribe(
 		"posnet.auth.>",
 		"gateway-auth-consumer",
@@ -54,7 +54,7 @@ func (s *Subscriber) Subscribe() error {
 }
 
 // handleAuthResult enruta el evento al handler correcto según el EventType.
-func (s *Subscriber) handleAuthResult(msg *natsclient.Msg) {
+func (s *TG_Subscriber) handleAuthResult(msg *natsclient.Msg) {
 	ctx := observability.ExtractTraceContext(context.Background(), msg)
 	ctx, span := observability.StartSpan(ctx, "subscriber.handleAuthResult")
 	defer span.End()
@@ -90,7 +90,7 @@ func (s *Subscriber) handleAuthResult(msg *natsclient.Msg) {
 	_ = msg.Ack()
 }
 
-func (s *Subscriber) handleApproval(ctx context.Context, envelope events.DomainEvent) error {
+func (s *TG_Subscriber) handleApproval(ctx context.Context, envelope events.DomainEvent) error {
 	payload, err := events.Unwrap[events.AuthorizationApprovedPayload](envelope)
 	if err != nil {
 		return fmt.Errorf("unwrap AuthorizationApproved: %w", err)
@@ -111,7 +111,7 @@ func (s *Subscriber) handleApproval(ctx context.Context, envelope events.DomainE
 	return s.handler.ApplyApproval(ctx, cmd)
 }
 
-func (s *Subscriber) handleRejection(ctx context.Context, envelope events.DomainEvent) error {
+func (s *TG_Subscriber) handleRejection(ctx context.Context, envelope events.DomainEvent) error {
 	payload, err := events.Unwrap[events.AuthorizationRejectedPayload](envelope)
 	if err != nil {
 		return fmt.Errorf("unwrap AuthorizationRejected: %w", err)
@@ -130,7 +130,7 @@ func (s *Subscriber) handleRejection(ctx context.Context, envelope events.Domain
 	return s.handler.ApplyRejection(ctx, cmd)
 }
 
-func (s *Subscriber) nak(ctx context.Context, msg *natsclient.Msg, err error, eventID string) {
+func (s *TG_Subscriber) nak(ctx context.Context, msg *natsclient.Msg, err error, eventID string) {
 	observability.RecordError(ctx, err)
 
 	var validationErr *pkgerrors.ValidationError
