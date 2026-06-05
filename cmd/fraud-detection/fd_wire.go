@@ -18,12 +18,13 @@ import (
 	pginfra "github.com/juantevez/go-posnet/context/fraud-detection/infrastructure/postgres"
 	"github.com/juantevez/go-posnet/pkg/natsutil"
 	"github.com/juantevez/go-posnet/pkg/pgutil"
+	nats "github.com/nats-io/nats.go"
 )
 
 // app agrupa todos los componentes del servicio y sus recursos abiertos.
 type app struct {
 	pool       *pgxpool.Pool
-	natsConn   *natsutil.Conn
+	natsConn   *nats.Conn
 	subscriber *natsinfra.FD_Subscriber
 	grpcSrv    *grpcserver.FraudDetectionServer
 	httpSrv    *http.Server

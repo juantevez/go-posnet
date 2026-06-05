@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/juantevez/go-posnet/context/fraud-detection/application/port"
 	"github.com/juantevez/go-posnet/context/fraud-detection/domain/aggregate"
@@ -129,7 +130,7 @@ func (h *EvaluateTransactionHandler) EvaluateTransaction(
 	)
 
 	// ── 5. Persistir + marcar idempotencia (atómico) ──────────────────────────
-	err = pgutil.WithReadCommitted(ctx, h.pool, func(tx pgxtx) error {
+	err = pgutil.WithReadCommitted(ctx, h.pool, func(tx pgx.Tx) error {
 		if err := h.fraudCaseRepo.Save(ctx, fc); err != nil {
 			return fmt.Errorf("save fraud case: %w", err)
 		}
@@ -152,7 +153,3 @@ func (h *EvaluateTransactionHandler) EvaluateTransaction(
 	return nil
 }
 
-// pgxtx alias local para el Unit of Work.
-type pgxtx = interface {
-	Exec(ctx context.Context, sql string, args ...any) (interface{}, error)
-}
