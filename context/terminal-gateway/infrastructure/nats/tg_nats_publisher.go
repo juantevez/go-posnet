@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/tu-org/posnet-backend/context/terminal-gateway/domain/aggregate"
-	"github.com/tu-org/posnet-backend/pkg/domain"
-	"github.com/tu-org/posnet-backend/pkg/events"
-	"github.com/tu-org/posnet-backend/pkg/natsutil"
+	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/aggregate"
+	"github.com/juantevez/go-posnet/pkg/domain"
+	"github.com/juantevez/go-posnet/pkg/events"
+	"github.com/juantevez/go-posnet/pkg/natsutil"
 )
 
 // EventPublisher implementa domain/service.EventPublisher usando NATS JetStream.

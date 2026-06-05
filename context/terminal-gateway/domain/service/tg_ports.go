@@ -4,8 +4,8 @@ package service
 import (
 	"context"
 
-	"github.com/tu-org/posnet-backend/context/terminal-gateway/domain/aggregate"
-	"github.com/tu-org/posnet-backend/pkg/domain"
+	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/aggregate"
+	"github.com/juantevez/go-posnet/pkg/domain"
 )
 
 // TerminalNotifier es el puerto de salida hacia el WebSocket del terminal.

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/tu-org/posnet-backend/context/terminal-gateway/domain/event"
-	"github.com/tu-org/posnet-backend/context/terminal-gateway/domain/valueobject"
-	"github.com/tu-org/posnet-backend/pkg/domain"
+	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/event"
+	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/valueobject"
+	"github.com/juantevez/go-posnet/pkg/domain"
 )
 
 // defaultSessionTTL es el tiempo de vida de una sesión QR.

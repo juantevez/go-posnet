@@ -1,4 +1,4 @@
-// Package main es el entrypoint del BC Authorization.
+// Package main es el entrypoint del BC Terminal Gateway.
 // Su única responsabilidad es orquestar el arranque y el shutdown graceful.
 // Todo el wiring de dependencias está en wire.go.
 package main
@@ -11,7 +11,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/juantevez/go-posnet/context/authorization/config"
+	"github.com/juantevez/go-posnet/context/terminal-gateway/config"
 	"github.com/juantevez/go-posnet/pkg/observability"
 )
 
@@ -56,7 +56,7 @@ func run() error {
 	}
 	defer func() { _ = shutdownMeter(ctx) }()
 
-	log.Info("starting authorization BC",
+	log.Info("starting terminal-gateway BC",
 		slog.String("version", cfg.OTEL.ServiceVersion),
 		slog.String("env", cfg.OTEL.Environment),
 	)
@@ -73,7 +73,11 @@ func run() error {
 		return fmt.Errorf("start services: %w", err)
 	}
 
-	log.Info("authorization BC ready — waiting for messages")
+	log.Info("terminal-gateway BC ready",
+		slog.Int("ws_port", cfg.WSPort),
+		slog.Int("http_port", cfg.HTTPPort),
+		slog.Int("grpc_port", cfg.GRPCPort),
+	)
 
 	// ── 8. Graceful shutdown ───────────────────────────────────────────────────
 	quit := make(chan os.Signal, 1)
@@ -83,6 +87,6 @@ func run() error {
 	log.Info("shutdown signal received — stopping services")
 	cancel()
 
-	log.Info("authorization BC stopped cleanly")
+	log.Info("terminal-gateway BC stopped cleanly")
 	return nil
 }

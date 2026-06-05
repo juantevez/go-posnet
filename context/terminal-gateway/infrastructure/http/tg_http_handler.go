@@ -8,12 +8,12 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/tu-org/posnet-backend/context/terminal-gateway/application/port"
-	"github.com/tu-org/posnet-backend/context/terminal-gateway/application/query"
-	"github.com/tu-org/posnet-backend/pkg/domain"
-	pkgerrors "github.com/tu-org/posnet-backend/pkg/errors"
-	"github.com/tu-org/posnet-backend/pkg/observability"
-	"github.com/tu-org/posnet-backend/pkg/pgutil"
+	"github.com/juantevez/go-posnet/context/terminal-gateway/application/port"
+	"github.com/juantevez/go-posnet/context/terminal-gateway/application/query"
+	"github.com/juantevez/go-posnet/pkg/domain"
+	pkgerrors "github.com/juantevez/go-posnet/pkg/errors"
+	"github.com/juantevez/go-posnet/pkg/observability"
+	"github.com/juantevez/go-posnet/pkg/pgutil"
 )
 
 // Handler contiene todos los handlers HTTP del BC Terminal Gateway.

@@ -4,7 +4,7 @@ package port
 import (
 	"context"
 
-	"github.com/tu-org/posnet-backend/pkg/domain"
+	"github.com/juantevez/go-posnet/pkg/domain"
 )
 
 // SessionService es el puerto de entrada principal.

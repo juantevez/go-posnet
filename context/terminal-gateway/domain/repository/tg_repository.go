@@ -4,9 +4,9 @@ package repository
 import (
 	"context"
 
-	"github.com/tu-org/posnet-backend/context/terminal-gateway/domain/aggregate"
-	"github.com/tu-org/posnet-backend/context/terminal-gateway/domain/entity"
-	"github.com/tu-org/posnet-backend/pkg/domain"
+	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/aggregate"
+	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/entity"
+	"github.com/juantevez/go-posnet/pkg/domain"
 )
 
 // PaymentSessionRepository persiste y recupera sesiones de pago activas.

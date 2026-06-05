@@ -9,11 +9,11 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/tu-org/posnet-backend/context/terminal-gateway/domain/aggregate"
-	"github.com/tu-org/posnet-backend/context/terminal-gateway/domain/entity"
-	"github.com/tu-org/posnet-backend/context/terminal-gateway/domain/valueobject"
-	"github.com/tu-org/posnet-backend/pkg/domain"
-	pkgerrors "github.com/tu-org/posnet-backend/pkg/errors"
+	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/aggregate"
+	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/entity"
+	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/valueobject"
+	"github.com/juantevez/go-posnet/pkg/domain"
+	pkgerrors "github.com/juantevez/go-posnet/pkg/errors"
 )
 
 // ─── PaymentSessionRepo ───────────────────────────────────────────────────────

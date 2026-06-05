@@ -7,12 +7,12 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/juantevez/go-posnet/context/terminal-gateway/application/command"
+	"github.com/juantevez/go-posnet/context/terminal-gateway/application/port"
+	pkgerrors "github.com/juantevez/go-posnet/pkg/errors"
+	"github.com/juantevez/go-posnet/pkg/events"
+	"github.com/juantevez/go-posnet/pkg/observability"
 	natsclient "github.com/nats-io/nats.go"
-	"github.com/tu-org/posnet-backend/context/terminal-gateway/application/command"
-	"github.com/tu-org/posnet-backend/context/terminal-gateway/application/port"
-	pkgerrors "github.com/tu-org/posnet-backend/pkg/errors"
-	"github.com/tu-org/posnet-backend/pkg/events"
-	"github.com/tu-org/posnet-backend/pkg/observability"
 )
 
 // Subscriber registra y gestiona los durable consumers del BC Terminal Gateway.

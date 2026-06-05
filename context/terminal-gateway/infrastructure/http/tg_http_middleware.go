@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"runtime/debug"
 
-	"github.com/tu-org/posnet-backend/pkg/observability"
+	"github.com/juantevez/go-posnet/pkg/observability"
 )
 
 // recoverMiddleware captura panics y retorna 500 sin caer el proceso.

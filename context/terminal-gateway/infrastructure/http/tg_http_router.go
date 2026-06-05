@@ -4,9 +4,9 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/tu-org/posnet-backend/context/terminal-gateway/application/port"
-	"github.com/tu-org/posnet-backend/context/terminal-gateway/application/query"
-	"github.com/tu-org/posnet-backend/pkg/observability"
+	"github.com/juantevez/go-posnet/context/terminal-gateway/application/port"
+	"github.com/juantevez/go-posnet/context/terminal-gateway/application/query"
+	"github.com/juantevez/go-posnet/pkg/observability"
 )
 
 // NewRouter construye el mux HTTP del BC Terminal Gateway con middlewares aplicados.

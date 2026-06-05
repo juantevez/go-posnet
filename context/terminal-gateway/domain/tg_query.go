@@ -5,11 +5,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/tu-org/posnet-backend/context/terminal-gateway/domain/repository"
-	"github.com/tu-org/posnet-backend/context/terminal-gateway/domain/valueobject"
-	"github.com/tu-org/posnet-backend/pkg/domain"
-	pkgerrors "github.com/tu-org/posnet-backend/pkg/errors"
-	"github.com/tu-org/posnet-backend/pkg/observability"
+	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/repository"
+	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/valueobject"
+	"github.com/juantevez/go-posnet/pkg/domain"
+	pkgerrors "github.com/juantevez/go-posnet/pkg/errors"
+	"github.com/juantevez/go-posnet/pkg/observability"
 )
 
 // SessionQueryHandler implementa las queries de solo lectura del BC.

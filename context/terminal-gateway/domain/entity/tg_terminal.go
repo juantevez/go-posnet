@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/tu-org/posnet-backend/pkg/domain"
+	"github.com/juantevez/go-posnet/pkg/domain"
 )
 
 // TerminalStatus indica el estado operativo de un terminal registrado.

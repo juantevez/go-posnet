@@ -10,8 +10,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/tu-org/posnet-backend/pkg/observability"
-	tgv1 "github.com/tu-org/posnet-backend/pkg/proto/terminalgateway/v1"
+	"github.com/juantevez/go-posnet/pkg/observability"
+	tgv1 "github.com/juantevez/go-posnet/pkg/proto/terminalgateway/v1"
 )
 
 // TerminalGatewayClient es el cliente gRPC hacia el BC Terminal Gateway.

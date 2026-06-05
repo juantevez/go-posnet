@@ -13,11 +13,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/tu-org/posnet-backend/context/terminal-gateway/application/query"
-	"github.com/tu-org/posnet-backend/context/terminal-gateway/domain/service"
-	"github.com/tu-org/posnet-backend/pkg/domain"
-	"github.com/tu-org/posnet-backend/pkg/observability"
-	tgv1 "github.com/tu-org/posnet-backend/pkg/proto/terminalgateway/v1"
+	"github.com/juantevez/go-posnet/context/terminal-gateway/application/query"
+	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/service"
+	"github.com/juantevez/go-posnet/pkg/domain"
+	"github.com/juantevez/go-posnet/pkg/observability"
+	tgv1 "github.com/juantevez/go-posnet/pkg/proto/terminalgateway/v1"
 )
 
 // TerminalGatewayServer implementa tgv1.TerminalGatewayServiceServer.
