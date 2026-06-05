@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/juantevez/go-posnet/context/settlement/application/port"
 	"github.com/juantevez/go-posnet/context/settlement/domain/repository"
@@ -99,7 +100,7 @@ func (h *BatchHandler) RegisterApproval(ctx context.Context, cmd port.RegisterAp
 	}
 
 	// Persistir + marcar idempotencia (atómico)
-	err = pgutil.WithReadCommitted(ctx, h.pool, func(tx pgxtx) error {
+	err = pgutil.WithReadCommitted(ctx, h.pool, func(tx pgx.Tx) error {
 		if err := h.batchRepo.Save(ctx, batch); err != nil {
 			return err
 		}
@@ -156,7 +157,7 @@ func (h *BatchHandler) RegisterReversal(ctx context.Context, cmd port.RegisterRe
 		return fmt.Errorf("RegisterReversal: remove transaction: %w", err)
 	}
 
-	return pgutil.WithReadCommitted(ctx, h.pool, func(tx pgxtx) error {
+	return pgutil.WithReadCommitted(ctx, h.pool, func(tx pgx.Tx) error {
 		if err := h.batchRepo.Save(ctx, batch); err != nil {
 			return err
 		}
@@ -213,7 +214,7 @@ func (h *BatchHandler) ProcessBatchClose(ctx context.Context, cmd port.ProcessBa
 	}
 
 	// Persistir + idempotencia
-	err = pgutil.WithReadCommitted(ctx, h.pool, func(tx pgxtx) error {
+	err = pgutil.WithReadCommitted(ctx, h.pool, func(tx pgx.Tx) error {
 		if err := h.batchRepo.Save(ctx, batch); err != nil {
 			return err
 		}
@@ -268,9 +269,4 @@ func (h *BatchHandler) submitBatch(ctx context.Context, batch interface {
 		)
 	}
 	return nil
-}
-
-// pgxtx alias local para el UoW.
-type pgxtx = interface {
-	Exec(ctx context.Context, sql string, args ...any) (interface{}, error)
 }
