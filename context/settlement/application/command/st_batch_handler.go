@@ -1,0 +1,276 @@
+// Package command contiene los command handlers del BC Settlement.
+package command
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/juantevez/go-posnet/context/settlement/application/port"
+	"github.com/juantevez/go-posnet/context/settlement/domain/repository"
+	"github.com/juantevez/go-posnet/context/settlement/domain/service"
+	"github.com/juantevez/go-posnet/context/settlement/domain/valueobject"
+	"github.com/juantevez/go-posnet/pkg/domain"
+	pkgerrors "github.com/juantevez/go-posnet/pkg/errors"
+	"github.com/juantevez/go-posnet/pkg/natsutil"
+	"github.com/juantevez/go-posnet/pkg/observability"
+	"github.com/juantevez/go-posnet/pkg/pgutil"
+)
+
+// BatchHandler implementa port.BatchService.
+// Orquesta el ciclo de vida de los batches de liquidación.
+type BatchHandler struct {
+	batchRepo   repository.SettlementBatchRepository
+	publisher   service.EventPublisher
+	processor   service.SettlementProcessor
+	idempotency *natsutil.IdempotencyStore
+	pool        *pgxpool.Pool
+	mdrPercent  float64
+}
+
+func NewBatchHandler(
+	batchRepo repository.SettlementBatchRepository,
+	publisher service.EventPublisher,
+	processor service.SettlementProcessor,
+	idempotency *natsutil.IdempotencyStore,
+	pool *pgxpool.Pool,
+	mdrPercent float64,
+) *BatchHandler {
+	return &BatchHandler{
+		batchRepo:   batchRepo,
+		publisher:   publisher,
+		processor:   processor,
+		idempotency: idempotency,
+		pool:        pool,
+		mdrPercent:  mdrPercent,
+	}
+}
+
+// RegisterApproval agrega una transacción aprobada al batch del terminal.
+func (h *BatchHandler) RegisterApproval(ctx context.Context, cmd port.RegisterApprovalCommand) error {
+	ctx, span := observability.StartSpan(ctx, "command.RegisterApproval")
+	defer span.End()
+
+	log := observability.FromContext(ctx).With(
+		slog.String("transaction_id", cmd.TransactionID),
+		slog.String("terminal_id", cmd.TerminalID),
+		slog.String("event_id", cmd.EventID),
+	)
+
+	// Idempotencia
+	already, err := h.idempotency.IsAlreadyProcessed(ctx, cmd.EventID)
+	if err != nil {
+		return fmt.Errorf("RegisterApproval: check idempotency: %w", err)
+	}
+	if already {
+		log.Info("approval event already registered — skipping")
+		return nil
+	}
+
+	// Parsear Value Objects
+	terminalID, err := domain.ParseTerminalID(cmd.TerminalID)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid terminal_id")
+	}
+	merchantID, err := domain.ParseMerchantID(cmd.MerchantID)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid merchant_id")
+	}
+	txID, err := domain.ParseTransactionID(cmd.TransactionID)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid transaction_id")
+	}
+	authorizedAt, err := time.Parse(time.RFC3339, cmd.AuthorizedAt)
+	if err != nil {
+		authorizedAt = time.Now().UTC()
+	}
+
+	// Obtener o crear el batch OPEN del terminal para ese día
+	batch, err := h.batchRepo.FindOrCreateOpen(ctx, terminalID, merchantID, authorizedAt, cmd.Currency)
+	if err != nil {
+		return fmt.Errorf("RegisterApproval: find or create batch: %w", err)
+	}
+
+	// Agregar la transacción al batch
+	if err := batch.AddTransaction(txID, cmd.AmountCents, valueobject.BatchTxPurchase); err != nil {
+		return fmt.Errorf("RegisterApproval: add transaction: %w", err)
+	}
+
+	// Persistir + marcar idempotencia (atómico)
+	err = pgutil.WithReadCommitted(ctx, h.pool, func(tx pgxtx) error {
+		if err := h.batchRepo.Save(ctx, batch); err != nil {
+			return err
+		}
+		return h.idempotency.MarkAsProcessed(ctx, tx, cmd.EventID)
+	})
+	if err != nil {
+		observability.RecordError(ctx, err)
+		return fmt.Errorf("RegisterApproval: persist: %w", err)
+	}
+
+	log.Info("transaction registered in batch",
+		slog.String("batch_id", batch.ID()),
+		slog.Int64("amount_cents", cmd.AmountCents),
+	)
+	return nil
+}
+
+// RegisterReversal descuenta una anulación del batch del terminal.
+func (h *BatchHandler) RegisterReversal(ctx context.Context, cmd port.RegisterReversalCommand) error {
+	ctx, span := observability.StartSpan(ctx, "command.RegisterReversal")
+	defer span.End()
+
+	already, err := h.idempotency.IsAlreadyProcessed(ctx, cmd.EventID)
+	if err != nil {
+		return fmt.Errorf("RegisterReversal: check idempotency: %w", err)
+	}
+	if already {
+		return nil
+	}
+
+	terminalID, err := domain.ParseTerminalID(cmd.TerminalID)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid terminal_id")
+	}
+	merchantID, err := domain.ParseMerchantID(cmd.MerchantID)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid merchant_id")
+	}
+	origTxID, err := domain.ParseTransactionID(cmd.OriginalTransactionID)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid original_transaction_id")
+	}
+	completedAt, err := time.Parse(time.RFC3339, cmd.CompletedAt)
+	if err != nil {
+		completedAt = time.Now().UTC()
+	}
+
+	batch, err := h.batchRepo.FindOrCreateOpen(ctx, terminalID, merchantID, completedAt, cmd.Currency)
+	if err != nil {
+		return fmt.Errorf("RegisterReversal: find or create batch: %w", err)
+	}
+
+	if err := batch.RemoveTransaction(origTxID); err != nil {
+		return fmt.Errorf("RegisterReversal: remove transaction: %w", err)
+	}
+
+	return pgutil.WithReadCommitted(ctx, h.pool, func(tx pgxtx) error {
+		if err := h.batchRepo.Save(ctx, batch); err != nil {
+			return err
+		}
+		return h.idempotency.MarkAsProcessed(ctx, tx, cmd.EventID)
+	})
+}
+
+// ProcessBatchClose procesa el cierre de lote solicitado por el terminal.
+func (h *BatchHandler) ProcessBatchClose(ctx context.Context, cmd port.ProcessBatchCloseCommand) error {
+	ctx, span := observability.StartSpan(ctx, "command.ProcessBatchClose")
+	defer span.End()
+
+	log := observability.FromContext(ctx).With(
+		slog.String("terminal_id", cmd.TerminalID),
+		slog.String("batch_date", cmd.BatchDate),
+		slog.String("event_id", cmd.EventID),
+	)
+
+	already, err := h.idempotency.IsAlreadyProcessed(ctx, cmd.EventID)
+	if err != nil {
+		return fmt.Errorf("ProcessBatchClose: check idempotency: %w", err)
+	}
+	if already {
+		log.Info("batch close event already processed — skipping")
+		return nil
+	}
+
+	terminalID, err := domain.ParseTerminalID(cmd.TerminalID)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid terminal_id")
+	}
+
+	batchDate, err := time.Parse("2006-01-02", cmd.BatchDate)
+	if err != nil {
+		batchDate = time.Now().UTC()
+	}
+
+	// Recuperar el batch OPEN del terminal
+	batch, err := h.batchRepo.FindOpenByTerminal(ctx, terminalID, batchDate)
+	if err != nil {
+		return fmt.Errorf("ProcessBatchClose: find open batch: %w", err)
+	}
+	if batch == nil {
+		log.Warn("no open batch found for terminal — nothing to close")
+		return nil
+	}
+
+	// Solicitar cierre → calcular totales → comparar con terminal
+	if err := batch.RequestClose(); err != nil {
+		return fmt.Errorf("ProcessBatchClose: request close: %w", err)
+	}
+	if err := batch.Close(cmd.TerminalCount, cmd.TerminalAmount); err != nil {
+		return fmt.Errorf("ProcessBatchClose: close batch: %w", err)
+	}
+
+	// Persistir + idempotencia
+	err = pgutil.WithReadCommitted(ctx, h.pool, func(tx pgxtx) error {
+		if err := h.batchRepo.Save(ctx, batch); err != nil {
+			return err
+		}
+		return h.idempotency.MarkAsProcessed(ctx, tx, cmd.EventID)
+	})
+	if err != nil {
+		return fmt.Errorf("ProcessBatchClose: persist: %w", err)
+	}
+
+	// Publicar BatchClosed a NATS → Notification BC
+	if err := h.publisher.PublishBatchClosed(ctx, batch); err != nil {
+		log.Error("failed to publish BatchClosed", slog.String("error", err.Error()))
+	}
+
+	log.Info("batch closed successfully",
+		slog.String("batch_id", batch.ID()),
+		slog.Int("discrepancies", batch.Discrepancies()),
+	)
+
+	// Si hay discrepancias, marcar como DISPUTED en lugar de continuar
+	if batch.Discrepancies() > 0 {
+		log.Warn("batch has discrepancies — marking as disputed",
+			slog.Int("discrepancies", batch.Discrepancies()),
+		)
+		if err := batch.MarkDisputed("terminal count/amount mismatch"); err != nil {
+			return fmt.Errorf("ProcessBatchClose: mark disputed: %w", err)
+		}
+		return h.batchRepo.Save(ctx, batch)
+	}
+
+	// Sin discrepancias → enviar al procesador externo
+	return h.submitBatch(ctx, batch)
+}
+
+// submitBatch envía el batch al procesador externo y lo marca como SUBMITTED.
+func (h *BatchHandler) submitBatch(ctx context.Context, batch interface {
+	Submit() error
+	MarkSettled() error
+	ID() string
+}) error {
+	// Delegar al aggregate
+	if sb, ok := batch.(interface {
+		Submit() error
+		MarkSettled() error
+		ID() string
+	}); ok {
+		if err := sb.Submit(); err != nil {
+			return fmt.Errorf("submitBatch: %w", err)
+		}
+		observability.FromContext(ctx).Info("batch submitted to processor",
+			slog.String("batch_id", sb.ID()),
+		)
+	}
+	return nil
+}
+
+// pgxtx alias local para el UoW.
+type pgxtx = interface {
+	Exec(ctx context.Context, sql string, args ...any) (interface{}, error)
+}
