@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	valueobject "github.com/juantevez/go-posnet/context/terminal-gateway/application/query"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/event"
-	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/valueobject"
 	"github.com/juantevez/go-posnet/pkg/domain"
 )
 

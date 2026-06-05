@@ -3,7 +3,7 @@ package aggregate
 import (
 	"time"
 
-	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/valueobject"
+	valueobject "github.com/juantevez/go-posnet/context/terminal-gateway/application/query"
 	"github.com/juantevez/go-posnet/pkg/domain"
 )
 

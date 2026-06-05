@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 
+	valueobject "github.com/juantevez/go-posnet/context/terminal-gateway/application/query"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/repository"
-	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/valueobject"
 	"github.com/juantevez/go-posnet/pkg/domain"
 	pkgerrors "github.com/juantevez/go-posnet/pkg/errors"
 	"github.com/juantevez/go-posnet/pkg/observability"

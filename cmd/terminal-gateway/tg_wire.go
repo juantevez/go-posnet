@@ -9,8 +9,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/application/command"
-	"github.com/juantevez/go-posnet/context/terminal-gateway/application/query"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/config"
+	query "github.com/juantevez/go-posnet/context/terminal-gateway/domain"
 	grpcserver "github.com/juantevez/go-posnet/context/terminal-gateway/infrastructure/grpc/server"
 	httpinfra "github.com/juantevez/go-posnet/context/terminal-gateway/infrastructure/http"
 	natsinfra "github.com/juantevez/go-posnet/context/terminal-gateway/infrastructure/nats"

@@ -9,10 +9,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/application/port"
+	valueobject "github.com/juantevez/go-posnet/context/terminal-gateway/application/query"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/aggregate"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/repository"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/service"
-	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/valueobject"
 	"github.com/juantevez/go-posnet/pkg/domain"
 	pkgerrors "github.com/juantevez/go-posnet/pkg/errors"
 	"github.com/juantevez/go-posnet/pkg/natsutil"
