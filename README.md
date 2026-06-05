@@ -2,7 +2,7 @@
 
 Backend del Sistema POSNET — procesamiento de pagos con tarjeta en tiempo real.
 
-Implementado en **Go 1.22**, siguiendo **Domain-Driven Design (DDD)** con **Arquitectura Hexagonal** (Ports & Adapters), organizado como **monorepo multi-módulo** con un único `go.mod`.
+Implementado en **Go 1.25**, siguiendo **Domain-Driven Design (DDD)** con **Arquitectura Hexagonal** (Ports & Adapters), organizado como **monorepo multi-módulo** con un único `go.mod`.
 
 ---
 
@@ -10,7 +10,7 @@ Implementado en **Go 1.22**, siguiendo **Domain-Driven Design (DDD)** con **Arqu
 
 | Componente | Tecnología | Rol |
 |---|---|---|
-| Lenguaje | Go 1.22+ | Backend principal |
+| Lenguaje | Go 1.25 | Backend principal |
 | Base de datos | PostgreSQL 16 | Persistencia por Bounded Context |
 | Mensajería | NATS JetStream 2.x | Bus de eventos asíncrono entre BCs |
 | API externa | REST + WebSocket | Conexión con terminales POSNET |
@@ -218,7 +218,7 @@ Ver [docs/adr/003-hexagonal-ddd.md](docs/adr/003-hexagonal-ddd.md) para la justi
 ### Prerequisitos
 
 ```
-Go 1.22+
+Go 1.25
 Docker y Docker Compose
 make
 ```
@@ -392,15 +392,10 @@ posnet_webhook_delivery_failures_total     # Fallos de webhook por comercio
 
 | BC | Dominio | Aplicación | Infraestructura | Tests |
 |---|---|---|---|---|
-| Terminal Gateway | ⬜ En progreso | ⬜ En progreso | ⬜ En progreso | ⬜ |
+| Terminal Gateway | ✅ Completo | ✅ Completo | ✅ Completo | ⬜ En progreso |
 | Authorization | ✅ Completo | ✅ Completo | ✅ Completo | ⬜ En progreso |
-| Fraud Detection | ⬜ En progreso | ⬜ En progreso | ⬜ En progreso | ⬜ |
+| Fraud Detection | ✅ Completo | ✅ Completo | ✅ Completo | ⬜ En progreso |
 | Settlement | ⬜ En progreso | ⬜ En progreso | ⬜ En progreso | ⬜ |
 | Notification | ⬜ En progreso | ⬜ En progreso | ⬜ En progreso | ⬜ |
 | Shared Kernel (pkg/) | ✅ Completo | — | — | ⬜ En progreso |
 
----
-
-## Licencia
-
-Propietario — uso interno. Ver [LICENSE](LICENSE).
