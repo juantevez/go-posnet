@@ -1,0 +1,331 @@
+// Package command contiene los command handlers del BC Terminal Gateway.
+package command
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/tu-org/posnet-backend/context/terminal-gateway/application/port"
+	"github.com/tu-org/posnet-backend/context/terminal-gateway/domain/aggregate"
+	"github.com/tu-org/posnet-backend/context/terminal-gateway/domain/repository"
+	"github.com/tu-org/posnet-backend/context/terminal-gateway/domain/service"
+	"github.com/tu-org/posnet-backend/context/terminal-gateway/domain/valueobject"
+	"github.com/tu-org/posnet-backend/pkg/domain"
+	pkgerrors "github.com/tu-org/posnet-backend/pkg/errors"
+	"github.com/tu-org/posnet-backend/pkg/natsutil"
+	"github.com/tu-org/posnet-backend/pkg/observability"
+	"github.com/tu-org/posnet-backend/pkg/pgutil"
+)
+
+// SessionHandler implementa port.SessionService y port.AuthResultService.
+// Orquesta el ciclo de vida de las sesiones de pago del terminal.
+type SessionHandler struct {
+	sessionRepo  repository.PaymentSessionRepository
+	terminalRepo repository.TerminalRepository
+	notifier     service.TerminalNotifier
+	publisher    service.EventPublisher
+	idempotency  *natsutil.IdempotencyStore
+	pool         *pgxpool.Pool
+}
+
+// NewSessionHandler construye el handler con todas sus dependencias.
+func NewSessionHandler(
+	sessionRepo repository.PaymentSessionRepository,
+	terminalRepo repository.TerminalRepository,
+	notifier service.TerminalNotifier,
+	publisher service.EventPublisher,
+	idempotency *natsutil.IdempotencyStore,
+	pool *pgxpool.Pool,
+) *SessionHandler {
+	return &SessionHandler{
+		sessionRepo:  sessionRepo,
+		terminalRepo: terminalRepo,
+		notifier:     notifier,
+		publisher:    publisher,
+		idempotency:  idempotency,
+		pool:         pool,
+	}
+}
+
+// CreateSession inicia una nueva sesión de pago.
+// Crea el aggregate, lo persiste y notifica al terminal (QR o NFC activo).
+func (h *SessionHandler) CreateSession(ctx context.Context, cmd port.CreateSessionCommand) (*port.SessionCreatedResult, error) {
+	ctx, span := observability.StartSpan(ctx, "command.CreateSession")
+	defer span.End()
+
+	log := observability.FromContext(ctx).With(
+		slog.String("terminal_id", cmd.TerminalID),
+		slog.String("channel", cmd.PaymentChannel),
+	)
+
+	// Parsear Value Objects
+	terminalID, err := domain.ParseTerminalID(cmd.TerminalID)
+	if err != nil {
+		return nil, pkgerrors.NewValidationError("invalid terminal_id")
+	}
+	merchantID, err := domain.ParseMerchantID(cmd.MerchantID)
+	if err != nil {
+		return nil, pkgerrors.NewValidationError("invalid merchant_id")
+	}
+	currency, err := domain.ParseCurrency(cmd.Currency)
+	if err != nil {
+		return nil, pkgerrors.NewValidationError("invalid currency")
+	}
+	amount, err := domain.NewMoney(cmd.AmountCents, currency)
+	if err != nil {
+		return nil, pkgerrors.NewValidationError("invalid amount")
+	}
+	stan, err := domain.NewSTAN(cmd.STAN)
+	if err != nil {
+		return nil, pkgerrors.NewValidationError("invalid stan")
+	}
+	channel, err := valueobject.ParsePaymentChannel(cmd.PaymentChannel)
+	if err != nil {
+		return nil, pkgerrors.NewValidationError("invalid payment channel")
+	}
+
+	// Verificar que el terminal esté activo
+	terminal, err := h.terminalRepo.FindByCertificateCN(ctx, cmd.TerminalID)
+	if err != nil {
+		return nil, fmt.Errorf("CreateSession: find terminal: %w", err)
+	}
+	if !terminal.IsActive() {
+		return nil, pkgerrors.NewValidationError("terminal is not active")
+	}
+
+	// Crear la sesión
+	session, err := aggregate.NewPaymentSession(terminalID, merchantID, amount, stan, channel)
+	if err != nil {
+		return nil, fmt.Errorf("CreateSession: create session: %w", err)
+	}
+
+	// Persistir
+	if err := h.sessionRepo.Save(ctx, session); err != nil {
+		observability.RecordError(ctx, err)
+		return nil, fmt.Errorf("CreateSession: save session: %w", err)
+	}
+
+	// Notificar al terminal (QR en pantalla o NFC activo)
+	if err := h.notifier.NotifySessionCreated(ctx, session); err != nil {
+		log.Error("failed to notify terminal of session creation",
+			slog.String("transaction_id", session.ID().String()),
+			slog.String("error", err.Error()),
+		)
+		// No es fatal — el terminal puede reintentar vía reconexión WebSocket
+	}
+
+	log.Info("payment session created",
+		slog.String("transaction_id", session.ID().String()),
+		slog.Int64("amount_cents", cmd.AmountCents),
+		slog.String("expires_at", session.ExpiresAt().Format(time.RFC3339)),
+	)
+
+	return &port.SessionCreatedResult{
+		TransactionID: session.ID().String(),
+		ExpiresAt:     session.ExpiresAt().Format(time.RFC3339),
+		TTLSeconds:    int(session.TTLRemaining().Seconds()),
+		Channel:       session.Channel().String(),
+		Amount:        session.Amount(),
+	}, nil
+}
+
+// ProcessPayment procesa el mensaje ISO 8583 y publica TransactionReceived a NATS.
+func (h *SessionHandler) ProcessPayment(ctx context.Context, cmd port.ProcessPaymentCommand) error {
+	ctx, span := observability.StartSpan(ctx, "command.ProcessPayment")
+	defer span.End()
+
+	txID, err := domain.ParseTransactionID(cmd.TransactionID)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid transaction_id")
+	}
+
+	session, err := h.sessionRepo.FindByID(ctx, txID)
+	if err != nil {
+		return fmt.Errorf("ProcessPayment: find session: %w", err)
+	}
+
+	if err := session.StartProcessing(cmd.ISO8583Raw, cmd.EMVDataBase64); err != nil {
+		return fmt.Errorf("ProcessPayment: start processing: %w", err)
+	}
+
+	if err := h.sessionRepo.Save(ctx, session); err != nil {
+		return fmt.Errorf("ProcessPayment: save session: %w", err)
+	}
+
+	// Publicar evento a NATS — dispara la Saga en Authorization BC
+	if err := h.publisher.PublishTransactionReceived(ctx, session, cmd.ISO8583Raw, cmd.EMVDataBase64); err != nil {
+		return fmt.Errorf("ProcessPayment: publish transaction received: %w", err)
+	}
+
+	return nil
+}
+
+// ApplyApproval recibe el resultado aprobado desde NATS y notifica al terminal.
+func (h *SessionHandler) ApplyApproval(ctx context.Context, cmd port.ApplyApprovalCommand) error {
+	ctx, span := observability.StartSpan(ctx, "command.ApplyApproval")
+	defer span.End()
+
+	// Idempotencia
+	already, err := h.idempotency.IsAlreadyProcessed(ctx, cmd.EventID)
+	if err != nil {
+		return fmt.Errorf("ApplyApproval: check idempotency: %w", err)
+	}
+	if already {
+		return nil
+	}
+
+	txID, err := domain.ParseTransactionID(cmd.TransactionID)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid transaction_id")
+	}
+
+	session, err := h.sessionRepo.FindByID(ctx, txID)
+	if err != nil {
+		return fmt.Errorf("ApplyApproval: find session: %w", err)
+	}
+
+	if err := session.Approve(cmd.AuthCode); err != nil {
+		return fmt.Errorf("ApplyApproval: approve session: %w", err)
+	}
+
+	err = pgutil.WithReadCommitted(ctx, h.pool, func(tx pgxtx) error {
+		if err := h.sessionRepo.Save(ctx, session); err != nil {
+			return err
+		}
+		return h.idempotency.MarkAsProcessed(ctx, tx, cmd.EventID)
+	})
+	if err != nil {
+		return fmt.Errorf("ApplyApproval: persist: %w", err)
+	}
+
+	// Notificar al terminal vía WebSocket
+	if err := h.notifier.NotifyResult(ctx, session); err != nil {
+		observability.FromContext(ctx).Error("failed to notify terminal of approval",
+			slog.String("transaction_id", cmd.TransactionID),
+			slog.String("error", err.Error()),
+		)
+	}
+
+	return nil
+}
+
+// ApplyRejection recibe el resultado rechazado desde NATS y notifica al terminal.
+func (h *SessionHandler) ApplyRejection(ctx context.Context, cmd port.ApplyRejectionCommand) error {
+	ctx, span := observability.StartSpan(ctx, "command.ApplyRejection")
+	defer span.End()
+
+	already, err := h.idempotency.IsAlreadyProcessed(ctx, cmd.EventID)
+	if err != nil {
+		return fmt.Errorf("ApplyRejection: check idempotency: %w", err)
+	}
+	if already {
+		return nil
+	}
+
+	txID, err := domain.ParseTransactionID(cmd.TransactionID)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid transaction_id")
+	}
+
+	session, err := h.sessionRepo.FindByID(ctx, txID)
+	if err != nil {
+		return fmt.Errorf("ApplyRejection: find session: %w", err)
+	}
+
+	if err := session.Reject(cmd.RejectionCode, cmd.RejectionReason); err != nil {
+		return fmt.Errorf("ApplyRejection: reject session: %w", err)
+	}
+
+	err = pgutil.WithReadCommitted(ctx, h.pool, func(tx pgxtx) error {
+		if err := h.sessionRepo.Save(ctx, session); err != nil {
+			return err
+		}
+		return h.idempotency.MarkAsProcessed(ctx, tx, cmd.EventID)
+	})
+	if err != nil {
+		return fmt.Errorf("ApplyRejection: persist: %w", err)
+	}
+
+	if err := h.notifier.NotifyResult(ctx, session); err != nil {
+		observability.FromContext(ctx).Error("failed to notify terminal of rejection",
+			slog.String("transaction_id", cmd.TransactionID),
+			slog.String("error", err.Error()),
+		)
+	}
+
+	return nil
+}
+
+// CancelSession cancela una sesión activa por acción del cajero.
+func (h *SessionHandler) CancelSession(ctx context.Context, cmd port.CancelSessionCommand) error {
+	ctx, span := observability.StartSpan(ctx, "command.CancelSession")
+	defer span.End()
+
+	txID, err := domain.ParseTransactionID(cmd.TransactionID)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid transaction_id")
+	}
+
+	session, err := h.sessionRepo.FindByID(ctx, txID)
+	if err != nil {
+		return fmt.Errorf("CancelSession: find session: %w", err)
+	}
+
+	if err := session.Cancel(); err != nil {
+		return fmt.Errorf("CancelSession: cancel: %w", err)
+	}
+
+	return h.sessionRepo.Save(ctx, session)
+}
+
+// RequestBatchClose publica el evento de cierre de lote a NATS.
+func (h *SessionHandler) RequestBatchClose(ctx context.Context, cmd port.RequestBatchCloseCommand) error {
+	ctx, span := observability.StartSpan(ctx, "command.RequestBatchClose")
+	defer span.End()
+
+	terminalID, err := domain.ParseTerminalID(cmd.TerminalID)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid terminal_id")
+	}
+	merchantID, err := domain.ParseMerchantID(cmd.MerchantID)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid merchant_id")
+	}
+
+	return h.publisher.PublishBatchCloseRequested(ctx,
+		terminalID, merchantID,
+		cmd.TerminalCount, cmd.TerminalAmount, cmd.Currency,
+	)
+}
+
+// RequestReversal publica la solicitud de anulación a NATS.
+func (h *SessionHandler) RequestReversal(ctx context.Context, cmd port.RequestReversalCommand) error {
+	ctx, span := observability.StartSpan(ctx, "command.RequestReversal")
+	defer span.End()
+
+	origTxID, err := domain.ParseTransactionID(cmd.OriginalTransactionID)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid original_transaction_id")
+	}
+	terminalID, err := domain.ParseTerminalID(cmd.TerminalID)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid terminal_id")
+	}
+	_ = terminalID
+
+	// Cargar la sesión original para tener el MerchantID y monto
+	session, err := h.sessionRepo.FindByID(ctx, origTxID)
+	if err != nil {
+		return fmt.Errorf("RequestReversal: find original session: %w", err)
+	}
+
+	return h.publisher.PublishReversalRequested(ctx, origTxID, session)
+}
+
+// pgxtx alias local para evitar imports circulares en helpers.
+type pgxtx = interface {
+	Exec(ctx context.Context, sql string, args ...any) (interface{}, error)
+}
