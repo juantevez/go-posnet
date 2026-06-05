@@ -1,4 +1,4 @@
-# posnet-backend
+# go-posnet
 
 Backend del Sistema POSNET — procesamiento de pagos con tarjeta en tiempo real.
 
@@ -80,7 +80,7 @@ Estas reglas se verifican en CI con **go-arch-lint**. Si se introduce un import 
 ## Estructura del repositorio
 
 ```
-posnet-backend/
+go-posnet/
 ├── cmd/                        # Entrypoints — un binario por BC
 │   ├── terminal-gateway/
 │   ├── authorization/
@@ -197,7 +197,7 @@ posnet.notification.dispatched.v1
 El proyecto usa **un único `go.mod`** en la raíz. No se usa `go work` ni múltiples módulos — todos los BCs y el Shared Kernel comparten el mismo módulo Go.
 
 ```
-module github.com/tu-org/posnet-backend
+module github.com/juantevez/go-posnet
 
 go 1.22
 ```
@@ -205,8 +205,8 @@ go 1.22
 Esto significa que todos los imports internos usan el mismo prefijo:
 
 ```go
-import "github.com/tu-org/posnet-backend/pkg/domain"
-import "github.com/tu-org/posnet-backend/context/authorization/domain/aggregate"
+import "github.com/juantevez/go-posnet/pkg/domain"
+import "github.com/juantevez/go-posnet/context/authorization/domain/aggregate"
 ```
 
 Ver [docs/adr/003-hexagonal-ddd.md](docs/adr/003-hexagonal-ddd.md) para la justificación de esta decisión.
@@ -227,8 +227,8 @@ make
 
 ```bash
 # Clonar el repo
-git clone https://github.com/tu-org/posnet-backend
-cd posnet-backend
+git clone https://github.com/juantevez/go-posnet
+cd go-posnet
 
 # Levantar Postgres, NATS y el collector de OpenTelemetry
 make dev-up

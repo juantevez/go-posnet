@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+package posnet.authorization.v1;
+
+option go_package = "github.com/juantevez/go-posnet/pkg/proto/authorization/v1;authorizationv1";
+
+import "google/protobuf/timestamp.proto";
+
+// AuthorizationService expone consultas de solo lectura del BC Authorization.
+//
+// Consumidores:
+//   - Herramientas de operación y soporte (CLI, dashboards internos)
+//   - Tests de integración
+//
+// NOTA: el flujo de autorización es completamente asíncrono vía NATS.
+// Este servicio gRPC es exclusivamente para consultas (lado Q del CQRS).
+// Ningún BC del sistema llama este servicio en el critical path.
+service AuthorizationService {
+
+  // GetTransactionStatus retorna el estado actual de una transacción por ID.
+  // Usado por soporte para verificar el estado de transacciones indeterminadas.
+  rpc GetTransactionStatus(GetTransactionStatusRequest) returns (GetTransactionStatusResponse);
+
+  // ListTerminalTransactions lista las transacciones de un terminal en un día.
+  // Usado para reconciliación manual y soporte al comercio.
+  rpc ListTerminalTransactions(ListTerminalTransactionsRequest) returns (ListTerminalTransactionsResponse);
+}
+
+// ─── GetTransactionStatus ─────────────────────────────────────────────────────
+
+message GetTransactionStatusRequest {
+  string transaction_id = 1;
+}
+
+message GetTransactionStatusResponse {
+  string             transaction_id   = 1;
+  string             terminal_id      = 2;
+  string             merchant_id      = 3;
+  TransactionState   state            = 4;
+  int64              amount_cents     = 5;
+  string             currency         = 6;
+  string             card_last4       = 7;
+  string             card_network     = 8;
+  string             entry_mode       = 9;
+
+  // Resultado (solo uno de los dos estará presente)
+  string auth_code        = 10; // Si state == APPROVED
+  string rejection_code   = 11; // Si state == REJECTED
+  string rejection_reason = 12; // Si state == REJECTED
+  string rejection_source = 13; // ACQUIRER | FRAUD | TIMEOUT | VALIDATION
+
+  // Antifraude
+  int32  fraud_score     = 14;
+  string fraud_decision  = 15; // APPROVE | REJECT | REVIEW
+
+  google.protobuf.Timestamp received_at   = 16;
+  google.protobuf.Timestamp authorized_at = 17; // Solo si APPROVED
+  google.protobuf.Timestamp rejected_at   = 18; // Solo si REJECTED
+}
+
+enum TransactionState {
+  TRANSACTION_STATE_UNSPECIFIED    = 0;
+  TRANSACTION_STATE_RECEIVED       = 1;
+  TRANSACTION_STATE_FRAUD_CHECKING = 2;
+  TRANSACTION_STATE_PROCESSING     = 3;
+  TRANSACTION_STATE_APPROVED       = 4;
+  TRANSACTION_STATE_REJECTED       = 5;
+  TRANSACTION_STATE_INDETERMINATE  = 6;
+  TRANSACTION_STATE_REVERSED       = 7;
+}
+
+// ─── ListTerminalTransactions ─────────────────────────────────────────────────
+
+message ListTerminalTransactionsRequest {
+  string terminal_id = 1;
+  string date        = 2; // "2025-06-04" — fecha del día a consultar
+  int32  page_size   = 3; // Máximo 100
+  string page_token  = 4; // Cursor de paginación (vacío = primera página)
+}
+
+message ListTerminalTransactionsResponse {
+  repeated TransactionSummary transactions = 1;
+  string next_page_token = 2; // Vacío si no hay más páginas
+  int32  total_count     = 3;
+}
+
+message TransactionSummary {
+  string           transaction_id = 1;
+  TransactionState state          = 2;
+  int64            amount_cents   = 3;
+  string           currency       = 4;
+  string           auth_code      = 5; // Solo si APPROVED
+  string           rejection_code = 6; // Solo si REJECTED
+  google.protobuf.Timestamp transaction_at = 7;
+}

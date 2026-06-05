@@ -1,0 +1,113 @@
+syntax = "proto3";
+
+package posnet.notification.v1;
+
+option go_package = "github.com/juantevez/go-posnet/pkg/proto/notification/v1;notificationv1";
+
+import "google/protobuf/timestamp.proto";
+
+// NotificationService expone consultas de estado de notificaciones.
+//
+// Consumidores:
+//   - Soporte técnico: verificar si una notificación llegó al comercio
+//   - Monitoreo: detectar comercios con webhooks fallando sistemáticamente
+//
+// NOTA: el despacho de notificaciones es asíncrono vía NATS.
+// Este servicio gRPC es exclusivamente para consultas y operaciones manuales.
+service NotificationService {
+
+  // GetNotificationStatus retorna el estado de entrega de una notificación.
+  // Incluye el historial de intentos para diagnóstico de fallos.
+  rpc GetNotificationStatus(GetNotificationStatusRequest) returns (GetNotificationStatusResponse);
+
+  // RetryNotification fuerza un reintento manual de una notificación en estado DEAD.
+  // Solo disponible para operadores con permisos de administración.
+  rpc RetryNotification(RetryNotificationRequest) returns (RetryNotificationResponse);
+
+  // ListFailedWebhooks lista los webhooks en estado DEAD o RETRYING por comercio.
+  // Usado para identificar comercios con endpoints de webhook caídos.
+  rpc ListFailedWebhooks(ListFailedWebhooksRequest) returns (ListFailedWebhooksResponse);
+}
+
+// ─── GetNotificationStatus ────────────────────────────────────────────────────
+
+message GetNotificationStatusRequest {
+  // Buscar por notification_id o por transaction_id (uno de los dos)
+  string notification_id = 1;
+  string transaction_id  = 2;
+}
+
+message GetNotificationStatusResponse {
+  string               notification_id = 1;
+  string               transaction_id  = 2;
+  string               merchant_id     = 3;
+  NotificationChannel  channel         = 4;
+  NotificationState    state           = 5;
+  int32                attempts        = 6; // Total de intentos realizados
+  int32                max_attempts    = 7; // Límite configurado
+  repeated DeliveryAttempt history     = 8;
+  google.protobuf.Timestamp created_at     = 9;
+  google.protobuf.Timestamp dispatched_at  = 10; // Solo si state == SENT
+}
+
+// DeliveryAttempt registra el resultado de un intento de entrega.
+message DeliveryAttempt {
+  int32  attempt_number = 1;
+  bool   success        = 2;
+  int32  http_status    = 3;   // Solo para webhooks
+  string error_message  = 4;   // Si success == false
+  google.protobuf.Timestamp attempted_at = 5;
+}
+
+// ─── RetryNotification ───────────────────────────────────────────────────────
+
+message RetryNotificationRequest {
+  string notification_id = 1;
+  string operator_id     = 2; // ID del operador que fuerza el reintento (auditoría)
+}
+
+message RetryNotificationResponse {
+  bool   accepted      = 1;
+  string error_reason  = 2; // Si accepted == false
+}
+
+// ─── ListFailedWebhooks ───────────────────────────────────────────────────────
+
+message ListFailedWebhooksRequest {
+  string merchant_id = 1; // Filtrar por comercio (vacío = todos)
+  int32  page_size   = 2;
+  string page_token  = 3;
+}
+
+message ListFailedWebhooksResponse {
+  repeated FailedWebhookSummary webhooks = 1;
+  string next_page_token = 2;
+}
+
+message FailedWebhookSummary {
+  string            notification_id = 1;
+  string            transaction_id  = 2;
+  string            merchant_id     = 3;
+  NotificationState state           = 4;
+  int32             attempts        = 5;
+  google.protobuf.Timestamp last_attempt_at = 6;
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum NotificationChannel {
+  NOTIFICATION_CHANNEL_UNSPECIFIED       = 0;
+  NOTIFICATION_CHANNEL_TERMINAL_WEBSOCKET = 1;
+  NOTIFICATION_CHANNEL_WEBHOOK           = 2;
+  NOTIFICATION_CHANNEL_EMAIL             = 3;
+  NOTIFICATION_CHANNEL_SMS               = 4;
+}
+
+enum NotificationState {
+  NOTIFICATION_STATE_UNSPECIFIED = 0;
+  NOTIFICATION_STATE_PENDING     = 1;
+  NOTIFICATION_STATE_SENT        = 2;
+  NOTIFICATION_STATE_FAILED      = 3;
+  NOTIFICATION_STATE_RETRYING    = 4;
+  NOTIFICATION_STATE_DEAD        = 5; // Superó MaxDeliver — requiere intervención manual
+}
