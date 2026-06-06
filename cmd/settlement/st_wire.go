@@ -73,9 +73,6 @@ func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 	if err := natsutil.EnsureStreams(js); err != nil {
 		return nil, fmt.Errorf("wire: ensure NATS streams: %w", err)
 	}
-	if err := natsutil.EnsureConsumers(js); err != nil {
-		return nil, fmt.Errorf("wire: ensure NATS consumers: %w", err)
-	}
 	slog.Info("NATS ready — streams and consumers configured")
 
 	// ── Infraestructura ────────────────────────────────────────────────────────

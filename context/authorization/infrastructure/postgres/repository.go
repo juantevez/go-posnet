@@ -33,7 +33,7 @@ func NewTransactionRepo(pool *pgxpool.Pool) *TransactionRepo {
 // Si la transacción ya existe (mismo ID), actualiza todos los campos mutables.
 func (r *TransactionRepo) Save(ctx context.Context, tx *aggregate.Transaction) error {
 	const query = `
-		INSERT INTO authorization.transactions (
+		INSERT INTO pn_authorization.transactions (
 			id, terminal_id, merchant_id,
 			state, amount_cents, currency,
 			pan_last4, card_network, entry_mode,
@@ -123,7 +123,7 @@ func (r *TransactionRepo) FindByID(ctx context.Context, id domain.TransactionID)
 			fraud_score, fraud_decision, fraud_rules_hit,
 			emv_data_b64, iso8583_raw,
 			created_at, authorized_at, rejected_at
-		FROM authorization.transactions
+		FROM pn_authorization.transactions
 		WHERE id = $1
 	`
 
@@ -147,7 +147,7 @@ func (r *TransactionRepo) FindBySTAN(
 			fraud_score, fraud_decision, fraud_rules_hit,
 			emv_data_b64, iso8583_raw,
 			created_at, authorized_at, rejected_at
-		FROM authorization.transactions
+		FROM pn_authorization.transactions
 		WHERE terminal_id = $1
 		  AND stan = $2
 		  AND created_at::date = $3::date
@@ -171,7 +171,7 @@ func (r *TransactionRepo) UpdateState(
 	id domain.TransactionID,
 	state valueobject.TransactionState,
 ) error {
-	const query = `UPDATE authorization.transactions SET state = $1 WHERE id = $2`
+	const query = `UPDATE pn_authorization.transactions SET state = $1 WHERE id = $2`
 	_, err := r.pool.Exec(ctx, query, state.String(), id.String())
 	if err != nil {
 		return fmt.Errorf("TransactionRepo.UpdateState: %w", err)
@@ -181,7 +181,7 @@ func (r *TransactionRepo) UpdateState(
 
 // ExistsByID verifica si una transacción con ese ID ya existe.
 func (r *TransactionRepo) ExistsByID(ctx context.Context, id domain.TransactionID) (bool, error) {
-	const query = `SELECT EXISTS(SELECT 1 FROM authorization.transactions WHERE id = $1)`
+	const query = `SELECT EXISTS(SELECT 1 FROM pn_authorization.transactions WHERE id = $1)`
 	var exists bool
 	err := r.pool.QueryRow(ctx, query, id.String()).Scan(&exists)
 	if err != nil {

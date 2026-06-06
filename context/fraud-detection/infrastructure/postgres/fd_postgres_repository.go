@@ -263,7 +263,7 @@ func (r *TransactionHistoryRepo) CountByTerminalLastHour(
 	terminalID domain.TerminalID,
 ) (int, error) {
 	const q = `
-		SELECT COUNT(*) FROM authorization.transactions
+		SELECT COUNT(*) FROM pn_authorization.transactions
 		WHERE terminal_id = $1
 		  AND created_at >= NOW() - INTERVAL '1 hour'
 	`
@@ -281,7 +281,7 @@ func (r *TransactionHistoryRepo) AverageAmountByMerchant(
 ) (int64, error) {
 	const q = `
 		SELECT COALESCE(AVG(amount_cents)::BIGINT, 0)
-		FROM authorization.transactions
+		FROM pn_authorization.transactions
 		WHERE merchant_id = $1
 		  AND created_at >= NOW() - INTERVAL '30 days'
 		  AND state = 'APPROVED'
@@ -300,7 +300,7 @@ func (r *TransactionHistoryRepo) CountRecentRejectionsByTerminal(
 	lastMinutes int,
 ) (int, error) {
 	const q = `
-		SELECT COUNT(*) FROM authorization.transactions
+		SELECT COUNT(*) FROM pn_authorization.transactions
 		WHERE terminal_id = $1
 		  AND state = 'REJECTED'
 		  AND created_at >= NOW() - ($2 || ' minutes')::INTERVAL
@@ -320,7 +320,7 @@ func (r *TransactionHistoryRepo) CountSameAmountAttempts(
 	lastMinutes int,
 ) (int, error) {
 	const q = `
-		SELECT COUNT(*) FROM authorization.transactions
+		SELECT COUNT(*) FROM pn_authorization.transactions
 		WHERE terminal_id = $1
 		  AND amount_cents = $2
 		  AND created_at >= NOW() - ($3 || ' minutes')::INTERVAL
