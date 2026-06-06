@@ -1,0 +1,441 @@
+{
+  "info": {
+    "name": "posnet-backend — Colección Completa",
+    "description": "Colección completa de todos los endpoints del sistema POSNET.\nIncliye flujo feliz, casos de error y operaciones de soporte.\n\nVariables de entorno requeridas:\n  - base_url_auth:   http://localhost:8080\n  - base_url_tg:     http://localhost:8081\n  - base_url_fd:     http://localhost:8083\n  - base_url_st:     http://localhost:8084\n  - base_url_nt:     http://localhost:8085",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url_auth", "value": "http://localhost:8080" },
+    { "key": "base_url_tg",   "value": "http://localhost:8081" },
+    { "key": "base_url_fd",   "value": "http://localhost:8083" },
+    { "key": "base_url_st",   "value": "http://localhost:8084" },
+    { "key": "base_url_nt",   "value": "http://localhost:8085" },
+    { "key": "transaction_id", "value": "" },
+    { "key": "terminal_id",    "value": "a1b2c3d4-e5f6-7890-abcd-ef1234567890" },
+    { "key": "merchant_id",    "value": "b2c3d4e5-f6a7-8901-bcde-f12345678901" },
+    { "key": "batch_id",       "value": "" },
+    { "key": "notification_id","value": "" }
+  ],
+  "item": [
+
+    {
+      "name": "🏥 Health Checks — Todos los BCs",
+      "item": [
+        {
+          "name": "Authorization — /healthz",
+          "request": { "method": "GET", "url": "{{base_url_auth}}/healthz" }
+        },
+        {
+          "name": "Authorization — /readyz",
+          "request": { "method": "GET", "url": "{{base_url_auth}}/readyz" }
+        },
+        {
+          "name": "Terminal Gateway — /healthz",
+          "request": { "method": "GET", "url": "{{base_url_tg}}/healthz" }
+        },
+        {
+          "name": "Terminal Gateway — /readyz",
+          "request": { "method": "GET", "url": "{{base_url_tg}}/readyz" }
+        },
+        {
+          "name": "Fraud Detection — /healthz",
+          "request": { "method": "GET", "url": "{{base_url_fd}}/healthz" }
+        },
+        {
+          "name": "Fraud Detection — /readyz",
+          "request": { "method": "GET", "url": "{{base_url_fd}}/readyz" }
+        },
+        {
+          "name": "Settlement — /healthz",
+          "request": { "method": "GET", "url": "{{base_url_st}}/healthz" }
+        },
+        {
+          "name": "Settlement — /readyz",
+          "request": { "method": "GET", "url": "{{base_url_st}}/readyz" }
+        },
+        {
+          "name": "Notification — /healthz",
+          "request": { "method": "GET", "url": "{{base_url_nt}}/healthz" }
+        },
+        {
+          "name": "Notification — /readyz",
+          "request": { "method": "GET", "url": "{{base_url_nt}}/readyz" }
+        }
+      ]
+    },
+
+    {
+      "name": "✅ Flujo Feliz — Compra Aprobada E2E",
+      "description": "Simula una transacción aprobada completa.\nEl flujo real es asíncrono vía NATS — estos endpoints representan\ncada paso del ciclo desde el punto de vista de operaciones.",
+      "item": [
+        {
+          "name": "1. Verificar estado de sesión activa del terminal",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url_tg}}/sessions/{{transaction_id}}",
+            "description": "Antes de iniciar, verificar que no hay sesión activa en el terminal"
+          }
+        },
+        {
+          "name": "2. Consultar transacción en Authorization (después de procesar)",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "var json = pm.response.json();",
+                "if (json.transaction_id) {",
+                "  pm.collectionVariables.set('transaction_id', json.transaction_id);",
+                "}"
+              ]
+            }
+          }],
+          "request": {
+            "method": "GET",
+            "url": "{{base_url_auth}}/transactions/{{transaction_id}}",
+            "description": "Consultar estado APPROVED de la transacción"
+          }
+        },
+        {
+          "name": "3. Verificar FraudCase creado",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url_fd}}/fraud-cases/{{transaction_id}}",
+            "description": "Verificar que el score de fraude fue calculado (APPROVE)"
+          }
+        },
+        {
+          "name": "4. Verificar transacción en batch de Settlement",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url_st}}/merchants/{{merchant_id}}/batches?date=2025-06-04",
+            "description": "Verificar que la tx fue incluida en el batch OPEN del día"
+          }
+        },
+        {
+          "name": "5. Verificar notificaciones generadas",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url_nt}}/transactions/{{transaction_id}}/notifications",
+            "description": "Debe haber 2 notificaciones: TERMINAL_WEBSOCKET + WEBHOOK"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "❌ Flujo Error — Transacción Rechazada",
+      "item": [
+        {
+          "name": "Consultar transacción rechazada",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url_auth}}/transactions/{{transaction_id}}",
+            "description": "State debe ser REJECTED con rejection_code y rejection_reason"
+          }
+        },
+        {
+          "name": "Verificar FraudCase — score APPROVE pero rechazo del emisor",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url_fd}}/fraud-cases/{{transaction_id}}"
+          }
+        },
+        {
+          "name": "Verificar notificación de rechazo al terminal",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url_nt}}/transactions/{{transaction_id}}/notifications",
+            "description": "Solo 1 notificación: TERMINAL_WEBSOCKET (rechazos no generan webhook)"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "🔍 Flujo Error — Rechazo por Fraude",
+      "item": [
+        {
+          "name": "Consultar transacción rechazada por fraude",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url_auth}}/transactions/{{transaction_id}}",
+            "description": "rejection_source debe ser FRAUD"
+          }
+        },
+        {
+          "name": "Ver detalle del FraudCase — score >= 70",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url_fd}}/fraud-cases/{{transaction_id}}",
+            "description": "decision=REJECT, score>=70, rules_hit mostrando reglas activadas"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "↩️ Flujo Reversal — Anulación",
+      "item": [
+        {
+          "name": "Verificar estado REVERSED en Authorization",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url_auth}}/transactions/{{transaction_id}}",
+            "description": "State debe ser REVERSED"
+          }
+        },
+        {
+          "name": "Verificar batch actualizado en Settlement",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url_st}}/merchants/{{merchant_id}}/batches?date=2025-06-04",
+            "description": "La tx revertida debe aparecer como REVERSAL en el batch"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "📦 Settlement — Cierre de Lote",
+      "item": [
+        {
+          "name": "Listar batches del comercio por fecha",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url_st}}/merchants/{{merchant_id}}/batches?date=2025-06-04",
+              "query": [{ "key": "date", "value": "2025-06-04" }]
+            }
+          }
+        },
+        {
+          "name": "Consultar batch por ID",
+          "event": [{
+            "listen": "prerequest",
+            "script": {
+              "exec": ["// Setear batch_id desde la respuesta anterior"]
+            }
+          }],
+          "request": {
+            "method": "GET",
+            "url": "{{base_url_st}}/batches/{{batch_id}}"
+          }
+        },
+        {
+          "name": "Force Close — cierre manual de batch (operaciones)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url_st}}/batches/{{batch_id}}/force-close",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"operator_id\": \"ops-user-001\"\n}"
+            },
+            "description": "Solo usar en soporte — el cierre normal lo hace el terminal vía NATS"
+          }
+        },
+        {
+          "name": "Verificar batch CLOSED con summary",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url_st}}/batches/{{batch_id}}",
+            "description": "State=CLOSED, total_count y total_amount calculados"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "🔔 Notification — Gestión",
+      "item": [
+        {
+          "name": "Consultar notificación por ID",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url_nt}}/notifications/{{notification_id}}"
+          }
+        },
+        {
+          "name": "Listar notificaciones de una transacción",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url_nt}}/transactions/{{transaction_id}}/notifications"
+          }
+        },
+        {
+          "name": "Listar notificaciones DEAD (fallidas definitivamente)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url_nt}}/notifications/dead?limit=20",
+              "query": [{ "key": "limit", "value": "20" }]
+            }
+          }
+        },
+        {
+          "name": "Force Retry — reintento manual de notificación DEAD",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url_nt}}/notifications/{{notification_id}}/force-retry",
+            "description": "Fuerza un reintento de entrega sin esperar el backoff"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "🛡️ Fraud Detection — Gestión de Reglas",
+      "item": [
+        {
+          "name": "Listar reglas activas con umbrales",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url_fd}}/rules",
+            "description": "Ver todas las reglas: score_weight y threshold_value actuales"
+          }
+        },
+        {
+          "name": "Ver FraudCase por transaction_id",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url_fd}}/fraud-cases/{{transaction_id}}"
+          }
+        },
+        {
+          "name": "Actualizar umbral de RULE-001 (Velocity Check)",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url_fd}}/rules/RULE-001/threshold",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"new_threshold\": 30,\n  \"new_score_weight\": 25\n}"
+            },
+            "description": "Bajar el umbral de 60 a 30 tx/hora para ser más estricto"
+          }
+        },
+        {
+          "name": "Actualizar umbral de RULE-002 (Unusual Amount)",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url_fd}}/rules/RULE-002/threshold",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"new_threshold\": 2,\n  \"new_score_weight\": 20\n}"
+            },
+            "description": "Bajar de 3x a 2x el promedio del comercio"
+          }
+        },
+        {
+          "name": "Actualizar umbral de RULE-003 (Multiple Rejections)",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url_fd}}/rules/RULE-003/threshold",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"new_threshold\": 2,\n  \"new_score_weight\": 30\n}"
+            }
+          }
+        },
+        {
+          "name": "Actualizar umbral de RULE-004 (Repeated Amount)",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url_fd}}/rules/RULE-004/threshold",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"new_threshold\": 1,\n  \"new_score_weight\": 20\n}"
+            }
+          }
+        },
+        {
+          "name": "Actualizar umbral de RULE-005 (High Amount Magstripe)",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url_fd}}/rules/RULE-005/threshold",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"new_threshold\": 2000000,\n  \"new_score_weight\": 35\n}"
+            },
+            "description": "Bajar el límite de ARS 50.000 a ARS 20.000 para magstripe"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "🖥️ Terminal Gateway — Operaciones",
+      "item": [
+        {
+          "name": "Consultar sesión activa por ID",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url_tg}}/sessions/{{transaction_id}}"
+          }
+        },
+        {
+          "name": "Cancelar sesión activa",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url_tg}}/sessions/{{transaction_id}}/cancel",
+            "header": [{ "key": "X-Terminal-ID", "value": "{{terminal_id}}" }],
+            "description": "Cancelación manual del cajero — transiciona a CANCELLED"
+          }
+        },
+        {
+          "name": "Solicitar anulación (reversal)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url_tg}}/sessions/{{transaction_id}}/reversal",
+            "header": [{ "key": "X-Terminal-ID", "value": "{{terminal_id}}" }],
+            "description": "Inicia el flujo de anulación — publica ReversalRequested a NATS"
+          }
+        },
+        {
+          "name": "Solicitar cierre de lote",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url_tg}}/batch-close",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"terminal_id\": \"{{terminal_id}}\",\n  \"merchant_id\": \"{{merchant_id}}\",\n  \"batch_date\": \"2025-06-04\",\n  \"terminal_count\": 10,\n  \"terminal_amount\": 1500000,\n  \"currency\": \"ARS\"\n}"
+            },
+            "description": "Publica BatchCloseRequested a NATS → Settlement BC procesa"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "📊 Métricas Prometheus",
+      "item": [
+        {
+          "name": "Authorization — /metrics",
+          "request": { "method": "GET", "url": "{{base_url_auth}}/metrics" }
+        },
+        {
+          "name": "Terminal Gateway — /metrics",
+          "request": { "method": "GET", "url": "{{base_url_tg}}/metrics" }
+        },
+        {
+          "name": "Fraud Detection — /metrics",
+          "request": { "method": "GET", "url": "{{base_url_fd}}/metrics" }
+        },
+        {
+          "name": "Settlement — /metrics",
+          "request": { "method": "GET", "url": "{{base_url_st}}/metrics" }
+        },
+        {
+          "name": "Notification — /metrics",
+          "request": { "method": "GET", "url": "{{base_url_nt}}/metrics" }
+        }
+      ]
+    }
+
+  ]
+}

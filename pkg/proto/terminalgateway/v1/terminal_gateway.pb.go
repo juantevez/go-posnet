@@ -7,13 +7,11 @@
 package terminalgatewayv1
 
 import (
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
-
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -128,13 +126,10 @@ func (TerminalConnectionStatus) EnumDescriptor() ([]byte, []int) {
 }
 
 type SendReceiptRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// terminal_id identifica el terminal destino del comprobante.
-	TerminalId string `protobuf:"bytes,1,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
-	// transaction_id es el ID de la transacción — para trazabilidad.
-	TransactionId string `protobuf:"bytes,2,opt,name=transaction_id,json=transactionId,proto3" json:"transaction_id,omitempty"`
-	// receipt contiene los datos del comprobante a mostrar en el terminal.
-	Receipt       *Receipt `protobuf:"bytes,3,opt,name=receipt,proto3" json:"receipt,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TerminalId    string                 `protobuf:"bytes,1,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
+	TransactionId string                 `protobuf:"bytes,2,opt,name=transaction_id,json=transactionId,proto3" json:"transaction_id,omitempty"`
+	Receipt       *Receipt               `protobuf:"bytes,3,opt,name=receipt,proto3" json:"receipt,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -191,12 +186,9 @@ func (x *SendReceiptRequest) GetReceipt() *Receipt {
 }
 
 type SendReceiptResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// delivered indica si el comprobante llegó al terminal exitosamente.
-	Delivered bool `protobuf:"varint,1,opt,name=delivered,proto3" json:"delivered,omitempty"`
-	// error_reason describe el motivo si delivered es false.
-	// Valores posibles: "NOT_CONNECTED", "SESSION_EXPIRED", "SEND_FAILED"
-	ErrorReason   string `protobuf:"bytes,2,opt,name=error_reason,json=errorReason,proto3" json:"error_reason,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Delivered     bool                   `protobuf:"varint,1,opt,name=delivered,proto3" json:"delivered,omitempty"`
+	ErrorReason   string                 `protobuf:"bytes,2,opt,name=error_reason,json=errorReason,proto3" json:"error_reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -245,27 +237,24 @@ func (x *SendReceiptResponse) GetErrorReason() string {
 	return ""
 }
 
-// Receipt contiene los datos del comprobante de la transacción.
 type Receipt struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	TransactionId   string                 `protobuf:"bytes,1,opt,name=transaction_id,json=transactionId,proto3" json:"transaction_id,omitempty"`
 	MerchantName    string                 `protobuf:"bytes,2,opt,name=merchant_name,json=merchantName,proto3" json:"merchant_name,omitempty"`
 	MerchantAddress string                 `protobuf:"bytes,3,opt,name=merchant_address,json=merchantAddress,proto3" json:"merchant_address,omitempty"`
-	TerminalCode    string                 `protobuf:"bytes,4,opt,name=terminal_code,json=terminalCode,proto3" json:"terminal_code,omitempty"` // ID físico del terminal (ej: "TRM-0042")
-	// Resultado de la transacción
-	Result          ReceiptResult `protobuf:"varint,5,opt,name=result,proto3,enum=posnet.terminalgateway.v1.ReceiptResult" json:"result,omitempty"`
-	AuthCode        string        `protobuf:"bytes,6,opt,name=auth_code,json=authCode,proto3" json:"auth_code,omitempty"`                      // Solo si result == APPROVED
-	RejectionCode   string        `protobuf:"bytes,7,opt,name=rejection_code,json=rejectionCode,proto3" json:"rejection_code,omitempty"`       // Solo si result == REJECTED
-	RejectionReason string        `protobuf:"bytes,8,opt,name=rejection_reason,json=rejectionReason,proto3" json:"rejection_reason,omitempty"` // Solo si result == REJECTED
-	// Datos financieros
-	AmountCents   int64                  `protobuf:"varint,9,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"`
-	Currency      string                 `protobuf:"bytes,10,opt,name=currency,proto3" json:"currency,omitempty"` // ISO 4217
-	CardLast4     string                 `protobuf:"bytes,11,opt,name=card_last4,json=cardLast4,proto3" json:"card_last4,omitempty"`
-	CardNetwork   string                 `protobuf:"bytes,12,opt,name=card_network,json=cardNetwork,proto3" json:"card_network,omitempty"`
-	EntryMode     string                 `protobuf:"bytes,13,opt,name=entry_mode,json=entryMode,proto3" json:"entry_mode,omitempty"` // CHIP | CONTACTLESS | MAGSTRIPE
-	TransactionAt *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=transaction_at,json=transactionAt,proto3" json:"transaction_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	TerminalCode    string                 `protobuf:"bytes,4,opt,name=terminal_code,json=terminalCode,proto3" json:"terminal_code,omitempty"`
+	Result          ReceiptResult          `protobuf:"varint,5,opt,name=result,proto3,enum=posnet.terminalgateway.v1.ReceiptResult" json:"result,omitempty"`
+	AuthCode        string                 `protobuf:"bytes,6,opt,name=auth_code,json=authCode,proto3" json:"auth_code,omitempty"`
+	RejectionCode   string                 `protobuf:"bytes,7,opt,name=rejection_code,json=rejectionCode,proto3" json:"rejection_code,omitempty"`
+	RejectionReason string                 `protobuf:"bytes,8,opt,name=rejection_reason,json=rejectionReason,proto3" json:"rejection_reason,omitempty"`
+	AmountCents     int64                  `protobuf:"varint,9,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"`
+	Currency        string                 `protobuf:"bytes,10,opt,name=currency,proto3" json:"currency,omitempty"`
+	CardLast4       string                 `protobuf:"bytes,11,opt,name=card_last4,json=cardLast4,proto3" json:"card_last4,omitempty"`
+	CardNetwork     string                 `protobuf:"bytes,12,opt,name=card_network,json=cardNetwork,proto3" json:"card_network,omitempty"`
+	EntryMode       string                 `protobuf:"bytes,13,opt,name=entry_mode,json=entryMode,proto3" json:"entry_mode,omitempty"`
+	TransactionAt   string                 `protobuf:"bytes,14,opt,name=transaction_at,json=transactionAt,proto3" json:"transaction_at,omitempty"` // RFC3339 — sin timestamp.proto
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Receipt) Reset() {
@@ -389,11 +378,11 @@ func (x *Receipt) GetEntryMode() string {
 	return ""
 }
 
-func (x *Receipt) GetTransactionAt() *timestamppb.Timestamp {
+func (x *Receipt) GetTransactionAt() string {
 	if x != nil {
 		return x.TransactionAt
 	}
-	return nil
+	return ""
 }
 
 type GetTerminalStatusRequest struct {
@@ -445,7 +434,7 @@ type GetTerminalStatusResponse struct {
 	TerminalId     string                   `protobuf:"bytes,1,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
 	Status         TerminalConnectionStatus `protobuf:"varint,2,opt,name=status,proto3,enum=posnet.terminalgateway.v1.TerminalConnectionStatus" json:"status,omitempty"`
 	MerchantId     string                   `protobuf:"bytes,3,opt,name=merchant_id,json=merchantId,proto3" json:"merchant_id,omitempty"`
-	ConnectedSince *timestamppb.Timestamp   `protobuf:"bytes,4,opt,name=connected_since,json=connectedSince,proto3" json:"connected_since,omitempty"` // Solo si CONNECTED
+	ConnectedSince string                   `protobuf:"bytes,4,opt,name=connected_since,json=connectedSince,proto3" json:"connected_since,omitempty"` // RFC3339
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -501,18 +490,18 @@ func (x *GetTerminalStatusResponse) GetMerchantId() string {
 	return ""
 }
 
-func (x *GetTerminalStatusResponse) GetConnectedSince() *timestamppb.Timestamp {
+func (x *GetTerminalStatusResponse) GetConnectedSince() string {
 	if x != nil {
 		return x.ConnectedSince
 	}
-	return nil
+	return ""
 }
 
 var File_terminal_gateway_proto protoreflect.FileDescriptor
 
 const file_terminal_gateway_proto_rawDesc = "" +
 	"\n" +
-	"\x16terminal_gateway.proto\x12\x19posnet.terminalgateway.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9a\x01\n" +
+	"\x16terminal_gateway.proto\x12\x19posnet.terminalgateway.v1\"\x9a\x01\n" +
 	"\x12SendReceiptRequest\x12\x1f\n" +
 	"\vterminal_id\x18\x01 \x01(\tR\n" +
 	"terminalId\x12%\n" +
@@ -520,7 +509,7 @@ const file_terminal_gateway_proto_rawDesc = "" +
 	"\areceipt\x18\x03 \x01(\v2\".posnet.terminalgateway.v1.ReceiptR\areceipt\"V\n" +
 	"\x13SendReceiptResponse\x12\x1c\n" +
 	"\tdelivered\x18\x01 \x01(\bR\tdelivered\x12!\n" +
-	"\ferror_reason\x18\x02 \x01(\tR\verrorReason\"\xb9\x04\n" +
+	"\ferror_reason\x18\x02 \x01(\tR\verrorReason\"\x9d\x04\n" +
 	"\aReceipt\x12%\n" +
 	"\x0etransaction_id\x18\x01 \x01(\tR\rtransactionId\x12#\n" +
 	"\rmerchant_name\x18\x02 \x01(\tR\fmerchantName\x12)\n" +
@@ -537,18 +526,18 @@ const file_terminal_gateway_proto_rawDesc = "" +
 	"card_last4\x18\v \x01(\tR\tcardLast4\x12!\n" +
 	"\fcard_network\x18\f \x01(\tR\vcardNetwork\x12\x1d\n" +
 	"\n" +
-	"entry_mode\x18\r \x01(\tR\tentryMode\x12A\n" +
-	"\x0etransaction_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\rtransactionAt\";\n" +
+	"entry_mode\x18\r \x01(\tR\tentryMode\x12%\n" +
+	"\x0etransaction_at\x18\x0e \x01(\tR\rtransactionAt\";\n" +
 	"\x18GetTerminalStatusRequest\x12\x1f\n" +
 	"\vterminal_id\x18\x01 \x01(\tR\n" +
-	"terminalId\"\xef\x01\n" +
+	"terminalId\"\xd3\x01\n" +
 	"\x19GetTerminalStatusResponse\x12\x1f\n" +
 	"\vterminal_id\x18\x01 \x01(\tR\n" +
 	"terminalId\x12K\n" +
 	"\x06status\x18\x02 \x01(\x0e23.posnet.terminalgateway.v1.TerminalConnectionStatusR\x06status\x12\x1f\n" +
 	"\vmerchant_id\x18\x03 \x01(\tR\n" +
-	"merchantId\x12C\n" +
-	"\x0fconnected_since\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x0econnectedSince*\x86\x01\n" +
+	"merchantId\x12'\n" +
+	"\x0fconnected_since\x18\x04 \x01(\tR\x0econnectedSince*\x86\x01\n" +
 	"\rReceiptResult\x12\x1e\n" +
 	"\x1aRECEIPT_RESULT_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17RECEIPT_RESULT_APPROVED\x10\x01\x12\x1b\n" +
@@ -561,7 +550,7 @@ const file_terminal_gateway_proto_rawDesc = "" +
 	"\"TERMINAL_CONNECTION_STATUS_UNKNOWN\x10\x032\x86\x02\n" +
 	"\x16TerminalGatewayService\x12l\n" +
 	"\vSendReceipt\x12-.posnet.terminalgateway.v1.SendReceiptRequest\x1a..posnet.terminalgateway.v1.SendReceiptResponse\x12~\n" +
-	"\x11GetTerminalStatus\x123.posnet.terminalgateway.v1.GetTerminalStatusRequest\x1a4.posnet.terminalgateway.v1.GetTerminalStatusResponseBQZOgithub.com/juantevez/go-posnet/pkg/proto/terminalgateway/v1;terminalgatewayv1b\x06proto3"
+	"\x11GetTerminalStatus\x123.posnet.terminalgateway.v1.GetTerminalStatusRequest\x1a4.posnet.terminalgateway.v1.GetTerminalStatusResponseBOZMgithub.com/juantevez/go-posnet/pkg/proto/terminalgateway/v1;terminalgatewayv1b\x06proto3"
 
 var (
 	file_terminal_gateway_proto_rawDescOnce sync.Once
@@ -585,23 +574,20 @@ var file_terminal_gateway_proto_goTypes = []any{
 	(*Receipt)(nil),                   // 4: posnet.terminalgateway.v1.Receipt
 	(*GetTerminalStatusRequest)(nil),  // 5: posnet.terminalgateway.v1.GetTerminalStatusRequest
 	(*GetTerminalStatusResponse)(nil), // 6: posnet.terminalgateway.v1.GetTerminalStatusResponse
-	(*timestamppb.Timestamp)(nil),     // 7: google.protobuf.Timestamp
 }
 var file_terminal_gateway_proto_depIdxs = []int32{
 	4, // 0: posnet.terminalgateway.v1.SendReceiptRequest.receipt:type_name -> posnet.terminalgateway.v1.Receipt
 	0, // 1: posnet.terminalgateway.v1.Receipt.result:type_name -> posnet.terminalgateway.v1.ReceiptResult
-	7, // 2: posnet.terminalgateway.v1.Receipt.transaction_at:type_name -> google.protobuf.Timestamp
-	1, // 3: posnet.terminalgateway.v1.GetTerminalStatusResponse.status:type_name -> posnet.terminalgateway.v1.TerminalConnectionStatus
-	7, // 4: posnet.terminalgateway.v1.GetTerminalStatusResponse.connected_since:type_name -> google.protobuf.Timestamp
-	2, // 5: posnet.terminalgateway.v1.TerminalGatewayService.SendReceipt:input_type -> posnet.terminalgateway.v1.SendReceiptRequest
-	5, // 6: posnet.terminalgateway.v1.TerminalGatewayService.GetTerminalStatus:input_type -> posnet.terminalgateway.v1.GetTerminalStatusRequest
-	3, // 7: posnet.terminalgateway.v1.TerminalGatewayService.SendReceipt:output_type -> posnet.terminalgateway.v1.SendReceiptResponse
-	6, // 8: posnet.terminalgateway.v1.TerminalGatewayService.GetTerminalStatus:output_type -> posnet.terminalgateway.v1.GetTerminalStatusResponse
-	7, // [7:9] is the sub-list for method output_type
-	5, // [5:7] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	1, // 2: posnet.terminalgateway.v1.GetTerminalStatusResponse.status:type_name -> posnet.terminalgateway.v1.TerminalConnectionStatus
+	2, // 3: posnet.terminalgateway.v1.TerminalGatewayService.SendReceipt:input_type -> posnet.terminalgateway.v1.SendReceiptRequest
+	5, // 4: posnet.terminalgateway.v1.TerminalGatewayService.GetTerminalStatus:input_type -> posnet.terminalgateway.v1.GetTerminalStatusRequest
+	3, // 5: posnet.terminalgateway.v1.TerminalGatewayService.SendReceipt:output_type -> posnet.terminalgateway.v1.SendReceiptResponse
+	6, // 6: posnet.terminalgateway.v1.TerminalGatewayService.GetTerminalStatus:output_type -> posnet.terminalgateway.v1.GetTerminalStatusResponse
+	5, // [5:7] is the sub-list for method output_type
+	3, // [3:5] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_terminal_gateway_proto_init() }

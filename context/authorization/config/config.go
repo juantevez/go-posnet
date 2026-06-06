@@ -1,5 +1,4 @@
 // Package config centraliza la configuración del BC Authorization.
-// Carga variables de entorno con valores por defecto seguros.
 package config
 
 import (
@@ -9,22 +8,12 @@ import (
 	"time"
 )
 
-// Config contiene toda la configuración del BC Authorization.
 type Config struct {
-	// Server
 	GRPCPort int
 	HTTPPort int
-
-	// PostgreSQL
 	Postgres PostgresConfig
-
-	// NATS
-	NATS NATSConfig
-
-	// OpenTelemetry
-	OTEL OTELConfig
-
-	// Adquirente externo
+	NATS     NATSConfig
+	OTEL     OTELConfig
 	Acquirer AcquirerConfig
 }
 
@@ -55,16 +44,21 @@ type OTELConfig struct {
 }
 
 type AcquirerConfig struct {
-	Host           string
-	Port           int
+	Host string
+	Port int
+	// TLS campos opcionales — en dev pueden estar vacíos o ser "none"
 	TLSCertPath    string
 	TLSKeyPath     string
 	TLSCAPath      string
 	TimeoutSeconds int
 }
 
-// Load carga la configuración desde variables de entorno.
-// Falla rápido si una variable requerida no está configurada.
+// TLSEnabled indica si hay configuración TLS real (no vacío ni "none").
+func (a AcquirerConfig) TLSEnabled() bool {
+	return a.TLSCertPath != "" && a.TLSCertPath != "none" &&
+		a.TLSKeyPath != "" && a.TLSKeyPath != "none"
+}
+
 func Load() (*Config, error) {
 	cfg := &Config{
 		GRPCPort: envInt("GRPC_PORT", 9090),
@@ -85,7 +79,7 @@ func Load() (*Config, error) {
 			TLSCertPath:   envStr("NATS_TLS_CERT", ""),
 			TLSKeyPath:    envStr("NATS_TLS_KEY", ""),
 			TLSCAPath:     envStr("NATS_TLS_CA", ""),
-			MaxReconnect:  -1, // infinito
+			MaxReconnect:  -1,
 			ReconnectWait: 2 * time.Second,
 		},
 
@@ -97,19 +91,18 @@ func Load() (*Config, error) {
 		},
 
 		Acquirer: AcquirerConfig{
-			Host:           requireEnv("ACQUIRER_HOST"),
-			Port:           envInt("ACQUIRER_PORT", 9100),
-			TLSCertPath:    requireEnv("ACQUIRER_TLS_CERT"),
-			TLSKeyPath:     requireEnv("ACQUIRER_TLS_KEY"),
-			TLSCAPath:      requireEnv("ACQUIRER_TLS_CA"),
+			Host: envStr("ACQUIRER_HOST", "localhost"),
+			Port: envInt("ACQUIRER_PORT", 9100),
+			// Opcionales — no hacen panic si están vacíos
+			TLSCertPath:    envStr("ACQUIRER_TLS_CERT", ""),
+			TLSKeyPath:     envStr("ACQUIRER_TLS_KEY", ""),
+			TLSCAPath:      envStr("ACQUIRER_TLS_CA", ""),
 			TimeoutSeconds: envInt("ACQUIRER_TIMEOUT_SECONDS", 30),
 		},
 	}
 
 	return cfg, nil
 }
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 func requireEnv(key string) string {
 	v := os.Getenv(key)

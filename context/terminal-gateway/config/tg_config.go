@@ -8,11 +8,10 @@ import (
 	"time"
 )
 
-// Config contiene toda la configuración del BC Terminal Gateway.
 type Config struct {
 	GRPCPort int
 	HTTPPort int
-	WSPort   int // Puerto dedicado para conexiones WebSocket de terminales
+	WSPort   int
 
 	Postgres PostgresConfig
 	NATS     NATSConfig
@@ -47,22 +46,25 @@ type OTELConfig struct {
 	Environment    string
 }
 
-// TLSConfig contiene los certificados para mTLS con los terminales POSNET.
-// Cada terminal presenta su propio certificado X.509 firmado por la CA interna.
+// TLSConfig contiene los certificados para mTLS con los terminales.
+// En desarrollo local pueden estar vacíos o ser "none".
 type TLSConfig struct {
-	CertPath string // Certificado del servidor Gateway
-	KeyPath  string // Clave privada del servidor Gateway
-	CAPath   string // CA que firmó los certificados de los terminales
+	CertPath string
+	KeyPath  string
+	CAPath   string
 }
 
-// SessionConfig contiene los parámetros de las sesiones de pago.
+// TLSEnabled indica si hay configuración TLS real (no vacío ni "none").
+func (t TLSConfig) TLSEnabled() bool {
+	return t.CertPath != "" && t.CertPath != "none" &&
+		t.KeyPath != "" && t.KeyPath != "none"
+}
+
 type SessionConfig struct {
-	TTLSeconds          int           // Tiempo de vida de una sesión QR (default: 300 = 5 min)
-	ExpiredCleanupEvery time.Duration // Frecuencia del job de limpieza de sesiones expiradas
+	TTLSeconds          int
+	ExpiredCleanupEvery time.Duration
 }
 
-// Load carga la configuración desde variables de entorno.
-// Hace panic inmediato si una variable requerida no está configurada.
 func Load() (*Config, error) {
 	cfg := &Config{
 		GRPCPort: envInt("GRPC_PORT", 9091),
@@ -95,10 +97,11 @@ func Load() (*Config, error) {
 			Environment:    envStr("ENVIRONMENT", "development"),
 		},
 
+		// TLS opcionales — en dev pueden estar vacíos o "none"
 		TLS: TLSConfig{
-			CertPath: requireEnv("TLS_CERT_PATH"),
-			KeyPath:  requireEnv("TLS_KEY_PATH"),
-			CAPath:   requireEnv("TLS_CA_PATH"),
+			CertPath: envStr("TLS_CERT_PATH", ""),
+			KeyPath:  envStr("TLS_KEY_PATH", ""),
+			CAPath:   envStr("TLS_CA_PATH", ""),
 		},
 
 		Session: SessionConfig{

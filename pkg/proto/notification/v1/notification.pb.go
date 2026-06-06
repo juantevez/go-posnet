@@ -7,13 +7,11 @@
 package notificationv1
 
 import (
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
-
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -86,7 +84,7 @@ const (
 	NotificationState_NOTIFICATION_STATE_SENT        NotificationState = 2
 	NotificationState_NOTIFICATION_STATE_FAILED      NotificationState = 3
 	NotificationState_NOTIFICATION_STATE_RETRYING    NotificationState = 4
-	NotificationState_NOTIFICATION_STATE_DEAD        NotificationState = 5 // Superó MaxDeliver — requiere intervención manual
+	NotificationState_NOTIFICATION_STATE_DEAD        NotificationState = 5
 )
 
 // Enum value maps for NotificationState.
@@ -137,10 +135,9 @@ func (NotificationState) EnumDescriptor() ([]byte, []int) {
 }
 
 type GetNotificationStatusRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Buscar por notification_id o por transaction_id (uno de los dos)
-	NotificationId string `protobuf:"bytes,1,opt,name=notification_id,json=notificationId,proto3" json:"notification_id,omitempty"`
-	TransactionId  string `protobuf:"bytes,2,opt,name=transaction_id,json=transactionId,proto3" json:"transaction_id,omitempty"`
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	NotificationId string                 `protobuf:"bytes,1,opt,name=notification_id,json=notificationId,proto3" json:"notification_id,omitempty"`
+	TransactionId  string                 `protobuf:"bytes,2,opt,name=transaction_id,json=transactionId,proto3" json:"transaction_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -196,11 +193,11 @@ type GetNotificationStatusResponse struct {
 	MerchantId     string                 `protobuf:"bytes,3,opt,name=merchant_id,json=merchantId,proto3" json:"merchant_id,omitempty"`
 	Channel        NotificationChannel    `protobuf:"varint,4,opt,name=channel,proto3,enum=posnet.notification.v1.NotificationChannel" json:"channel,omitempty"`
 	State          NotificationState      `protobuf:"varint,5,opt,name=state,proto3,enum=posnet.notification.v1.NotificationState" json:"state,omitempty"`
-	Attempts       int32                  `protobuf:"varint,6,opt,name=attempts,proto3" json:"attempts,omitempty"`                          // Total de intentos realizados
-	MaxAttempts    int32                  `protobuf:"varint,7,opt,name=max_attempts,json=maxAttempts,proto3" json:"max_attempts,omitempty"` // Límite configurado
+	Attempts       int32                  `protobuf:"varint,6,opt,name=attempts,proto3" json:"attempts,omitempty"`
+	MaxAttempts    int32                  `protobuf:"varint,7,opt,name=max_attempts,json=maxAttempts,proto3" json:"max_attempts,omitempty"`
 	History        []*DeliveryAttempt     `protobuf:"bytes,8,rep,name=history,proto3" json:"history,omitempty"`
-	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	DispatchedAt   *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=dispatched_at,json=dispatchedAt,proto3" json:"dispatched_at,omitempty"` // Solo si state == SENT
+	CreatedAt      string                 `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`           // RFC3339
+	DispatchedAt   string                 `protobuf:"bytes,10,opt,name=dispatched_at,json=dispatchedAt,proto3" json:"dispatched_at,omitempty"` // RFC3339
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -291,28 +288,27 @@ func (x *GetNotificationStatusResponse) GetHistory() []*DeliveryAttempt {
 	return nil
 }
 
-func (x *GetNotificationStatusResponse) GetCreatedAt() *timestamppb.Timestamp {
+func (x *GetNotificationStatusResponse) GetCreatedAt() string {
 	if x != nil {
 		return x.CreatedAt
 	}
-	return nil
+	return ""
 }
 
-func (x *GetNotificationStatusResponse) GetDispatchedAt() *timestamppb.Timestamp {
+func (x *GetNotificationStatusResponse) GetDispatchedAt() string {
 	if x != nil {
 		return x.DispatchedAt
 	}
-	return nil
+	return ""
 }
 
-// DeliveryAttempt registra el resultado de un intento de entrega.
 type DeliveryAttempt struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AttemptNumber int32                  `protobuf:"varint,1,opt,name=attempt_number,json=attemptNumber,proto3" json:"attempt_number,omitempty"`
 	Success       bool                   `protobuf:"varint,2,opt,name=success,proto3" json:"success,omitempty"`
-	HttpStatus    int32                  `protobuf:"varint,3,opt,name=http_status,json=httpStatus,proto3" json:"http_status,omitempty"`      // Solo para webhooks
-	ErrorMessage  string                 `protobuf:"bytes,4,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"` // Si success == false
-	AttemptedAt   *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=attempted_at,json=attemptedAt,proto3" json:"attempted_at,omitempty"`
+	HttpStatus    int32                  `protobuf:"varint,3,opt,name=http_status,json=httpStatus,proto3" json:"http_status,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,4,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	AttemptedAt   string                 `protobuf:"bytes,5,opt,name=attempted_at,json=attemptedAt,proto3" json:"attempted_at,omitempty"` // RFC3339
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -375,17 +371,17 @@ func (x *DeliveryAttempt) GetErrorMessage() string {
 	return ""
 }
 
-func (x *DeliveryAttempt) GetAttemptedAt() *timestamppb.Timestamp {
+func (x *DeliveryAttempt) GetAttemptedAt() string {
 	if x != nil {
 		return x.AttemptedAt
 	}
-	return nil
+	return ""
 }
 
 type RetryNotificationRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	NotificationId string                 `protobuf:"bytes,1,opt,name=notification_id,json=notificationId,proto3" json:"notification_id,omitempty"`
-	OperatorId     string                 `protobuf:"bytes,2,opt,name=operator_id,json=operatorId,proto3" json:"operator_id,omitempty"` // ID del operador que fuerza el reintento (auditoría)
+	OperatorId     string                 `protobuf:"bytes,2,opt,name=operator_id,json=operatorId,proto3" json:"operator_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -437,7 +433,7 @@ func (x *RetryNotificationRequest) GetOperatorId() string {
 type RetryNotificationResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Accepted      bool                   `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
-	ErrorReason   string                 `protobuf:"bytes,2,opt,name=error_reason,json=errorReason,proto3" json:"error_reason,omitempty"` // Si accepted == false
+	ErrorReason   string                 `protobuf:"bytes,2,opt,name=error_reason,json=errorReason,proto3" json:"error_reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -488,7 +484,7 @@ func (x *RetryNotificationResponse) GetErrorReason() string {
 
 type ListFailedWebhooksRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	MerchantId    string                 `protobuf:"bytes,1,opt,name=merchant_id,json=merchantId,proto3" json:"merchant_id,omitempty"` // Filtrar por comercio (vacío = todos)
+	MerchantId    string                 `protobuf:"bytes,1,opt,name=merchant_id,json=merchantId,proto3" json:"merchant_id,omitempty"`
 	PageSize      int32                  `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	PageToken     string                 `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -605,7 +601,7 @@ type FailedWebhookSummary struct {
 	MerchantId     string                 `protobuf:"bytes,3,opt,name=merchant_id,json=merchantId,proto3" json:"merchant_id,omitempty"`
 	State          NotificationState      `protobuf:"varint,4,opt,name=state,proto3,enum=posnet.notification.v1.NotificationState" json:"state,omitempty"`
 	Attempts       int32                  `protobuf:"varint,5,opt,name=attempts,proto3" json:"attempts,omitempty"`
-	LastAttemptAt  *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=last_attempt_at,json=lastAttemptAt,proto3" json:"last_attempt_at,omitempty"`
+	LastAttemptAt  string                 `protobuf:"bytes,6,opt,name=last_attempt_at,json=lastAttemptAt,proto3" json:"last_attempt_at,omitempty"` // RFC3339
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -675,21 +671,21 @@ func (x *FailedWebhookSummary) GetAttempts() int32 {
 	return 0
 }
 
-func (x *FailedWebhookSummary) GetLastAttemptAt() *timestamppb.Timestamp {
+func (x *FailedWebhookSummary) GetLastAttemptAt() string {
 	if x != nil {
 		return x.LastAttemptAt
 	}
-	return nil
+	return ""
 }
 
 var File_notification_proto protoreflect.FileDescriptor
 
 const file_notification_proto_rawDesc = "" +
 	"\n" +
-	"\x12notification.proto\x12\x16posnet.notification.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"n\n" +
+	"\x12notification.proto\x12\x16posnet.notification.v1\"n\n" +
 	"\x1cGetNotificationStatusRequest\x12'\n" +
 	"\x0fnotification_id\x18\x01 \x01(\tR\x0enotificationId\x12%\n" +
-	"\x0etransaction_id\x18\x02 \x01(\tR\rtransactionId\"\x96\x04\n" +
+	"\x0etransaction_id\x18\x02 \x01(\tR\rtransactionId\"\xde\x03\n" +
 	"\x1dGetNotificationStatusResponse\x12'\n" +
 	"\x0fnotification_id\x18\x01 \x01(\tR\x0enotificationId\x12%\n" +
 	"\x0etransaction_id\x18\x02 \x01(\tR\rtransactionId\x12\x1f\n" +
@@ -699,18 +695,18 @@ const file_notification_proto_rawDesc = "" +
 	"\x05state\x18\x05 \x01(\x0e2).posnet.notification.v1.NotificationStateR\x05state\x12\x1a\n" +
 	"\battempts\x18\x06 \x01(\x05R\battempts\x12!\n" +
 	"\fmax_attempts\x18\a \x01(\x05R\vmaxAttempts\x12A\n" +
-	"\ahistory\x18\b \x03(\v2'.posnet.notification.v1.DeliveryAttemptR\ahistory\x129\n" +
+	"\ahistory\x18\b \x03(\v2'.posnet.notification.v1.DeliveryAttemptR\ahistory\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12?\n" +
+	"created_at\x18\t \x01(\tR\tcreatedAt\x12#\n" +
 	"\rdispatched_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\fdispatchedAt\"\xd7\x01\n" +
+	" \x01(\tR\fdispatchedAt\"\xbb\x01\n" +
 	"\x0fDeliveryAttempt\x12%\n" +
 	"\x0eattempt_number\x18\x01 \x01(\x05R\rattemptNumber\x12\x18\n" +
 	"\asuccess\x18\x02 \x01(\bR\asuccess\x12\x1f\n" +
 	"\vhttp_status\x18\x03 \x01(\x05R\n" +
 	"httpStatus\x12#\n" +
-	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\x12=\n" +
-	"\fattempted_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\vattemptedAt\"d\n" +
+	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\x12!\n" +
+	"\fattempted_at\x18\x05 \x01(\tR\vattemptedAt\"d\n" +
 	"\x18RetryNotificationRequest\x12'\n" +
 	"\x0fnotification_id\x18\x01 \x01(\tR\x0enotificationId\x12\x1f\n" +
 	"\voperator_id\x18\x02 \x01(\tR\n" +
@@ -726,15 +722,15 @@ const file_notification_proto_rawDesc = "" +
 	"page_token\x18\x03 \x01(\tR\tpageToken\"\x8e\x01\n" +
 	"\x1aListFailedWebhooksResponse\x12H\n" +
 	"\bwebhooks\x18\x01 \x03(\v2,.posnet.notification.v1.FailedWebhookSummaryR\bwebhooks\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xa8\x02\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x8c\x02\n" +
 	"\x14FailedWebhookSummary\x12'\n" +
 	"\x0fnotification_id\x18\x01 \x01(\tR\x0enotificationId\x12%\n" +
 	"\x0etransaction_id\x18\x02 \x01(\tR\rtransactionId\x12\x1f\n" +
 	"\vmerchant_id\x18\x03 \x01(\tR\n" +
 	"merchantId\x12?\n" +
 	"\x05state\x18\x04 \x01(\x0e2).posnet.notification.v1.NotificationStateR\x05state\x12\x1a\n" +
-	"\battempts\x18\x05 \x01(\x05R\battempts\x12B\n" +
-	"\x0flast_attempt_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\rlastAttemptAt*\xc8\x01\n" +
+	"\battempts\x18\x05 \x01(\x05R\battempts\x12&\n" +
+	"\x0flast_attempt_at\x18\x06 \x01(\tR\rlastAttemptAt*\xc8\x01\n" +
 	"\x13NotificationChannel\x12$\n" +
 	" NOTIFICATION_CHANNEL_UNSPECIFIED\x10\x00\x12+\n" +
 	"'NOTIFICATION_CHANNEL_TERMINAL_WEBSOCKET\x10\x01\x12 \n" +
@@ -751,7 +747,7 @@ const file_notification_proto_rawDesc = "" +
 	"\x13NotificationService\x12\x84\x01\n" +
 	"\x15GetNotificationStatus\x124.posnet.notification.v1.GetNotificationStatusRequest\x1a5.posnet.notification.v1.GetNotificationStatusResponse\x12x\n" +
 	"\x11RetryNotification\x120.posnet.notification.v1.RetryNotificationRequest\x1a1.posnet.notification.v1.RetryNotificationResponse\x12{\n" +
-	"\x12ListFailedWebhooks\x121.posnet.notification.v1.ListFailedWebhooksRequest\x1a2.posnet.notification.v1.ListFailedWebhooksResponseBKZIgithub.com/juantevez/go-posnet/pkg/proto/notification/v1;notificationv1b\x06proto3"
+	"\x12ListFailedWebhooks\x121.posnet.notification.v1.ListFailedWebhooksRequest\x1a2.posnet.notification.v1.ListFailedWebhooksResponseBIZGgithub.com/juantevez/go-posnet/pkg/proto/notification/v1;notificationv1b\x06proto3"
 
 var (
 	file_notification_proto_rawDescOnce sync.Once
@@ -778,29 +774,24 @@ var file_notification_proto_goTypes = []any{
 	(*ListFailedWebhooksRequest)(nil),     // 7: posnet.notification.v1.ListFailedWebhooksRequest
 	(*ListFailedWebhooksResponse)(nil),    // 8: posnet.notification.v1.ListFailedWebhooksResponse
 	(*FailedWebhookSummary)(nil),          // 9: posnet.notification.v1.FailedWebhookSummary
-	(*timestamppb.Timestamp)(nil),         // 10: google.protobuf.Timestamp
 }
 var file_notification_proto_depIdxs = []int32{
-	0,  // 0: posnet.notification.v1.GetNotificationStatusResponse.channel:type_name -> posnet.notification.v1.NotificationChannel
-	1,  // 1: posnet.notification.v1.GetNotificationStatusResponse.state:type_name -> posnet.notification.v1.NotificationState
-	4,  // 2: posnet.notification.v1.GetNotificationStatusResponse.history:type_name -> posnet.notification.v1.DeliveryAttempt
-	10, // 3: posnet.notification.v1.GetNotificationStatusResponse.created_at:type_name -> google.protobuf.Timestamp
-	10, // 4: posnet.notification.v1.GetNotificationStatusResponse.dispatched_at:type_name -> google.protobuf.Timestamp
-	10, // 5: posnet.notification.v1.DeliveryAttempt.attempted_at:type_name -> google.protobuf.Timestamp
-	9,  // 6: posnet.notification.v1.ListFailedWebhooksResponse.webhooks:type_name -> posnet.notification.v1.FailedWebhookSummary
-	1,  // 7: posnet.notification.v1.FailedWebhookSummary.state:type_name -> posnet.notification.v1.NotificationState
-	10, // 8: posnet.notification.v1.FailedWebhookSummary.last_attempt_at:type_name -> google.protobuf.Timestamp
-	2,  // 9: posnet.notification.v1.NotificationService.GetNotificationStatus:input_type -> posnet.notification.v1.GetNotificationStatusRequest
-	5,  // 10: posnet.notification.v1.NotificationService.RetryNotification:input_type -> posnet.notification.v1.RetryNotificationRequest
-	7,  // 11: posnet.notification.v1.NotificationService.ListFailedWebhooks:input_type -> posnet.notification.v1.ListFailedWebhooksRequest
-	3,  // 12: posnet.notification.v1.NotificationService.GetNotificationStatus:output_type -> posnet.notification.v1.GetNotificationStatusResponse
-	6,  // 13: posnet.notification.v1.NotificationService.RetryNotification:output_type -> posnet.notification.v1.RetryNotificationResponse
-	8,  // 14: posnet.notification.v1.NotificationService.ListFailedWebhooks:output_type -> posnet.notification.v1.ListFailedWebhooksResponse
-	12, // [12:15] is the sub-list for method output_type
-	9,  // [9:12] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	0, // 0: posnet.notification.v1.GetNotificationStatusResponse.channel:type_name -> posnet.notification.v1.NotificationChannel
+	1, // 1: posnet.notification.v1.GetNotificationStatusResponse.state:type_name -> posnet.notification.v1.NotificationState
+	4, // 2: posnet.notification.v1.GetNotificationStatusResponse.history:type_name -> posnet.notification.v1.DeliveryAttempt
+	9, // 3: posnet.notification.v1.ListFailedWebhooksResponse.webhooks:type_name -> posnet.notification.v1.FailedWebhookSummary
+	1, // 4: posnet.notification.v1.FailedWebhookSummary.state:type_name -> posnet.notification.v1.NotificationState
+	2, // 5: posnet.notification.v1.NotificationService.GetNotificationStatus:input_type -> posnet.notification.v1.GetNotificationStatusRequest
+	5, // 6: posnet.notification.v1.NotificationService.RetryNotification:input_type -> posnet.notification.v1.RetryNotificationRequest
+	7, // 7: posnet.notification.v1.NotificationService.ListFailedWebhooks:input_type -> posnet.notification.v1.ListFailedWebhooksRequest
+	3, // 8: posnet.notification.v1.NotificationService.GetNotificationStatus:output_type -> posnet.notification.v1.GetNotificationStatusResponse
+	6, // 9: posnet.notification.v1.NotificationService.RetryNotification:output_type -> posnet.notification.v1.RetryNotificationResponse
+	8, // 10: posnet.notification.v1.NotificationService.ListFailedWebhooks:output_type -> posnet.notification.v1.ListFailedWebhooksResponse
+	8, // [8:11] is the sub-list for method output_type
+	5, // [5:8] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_notification_proto_init() }

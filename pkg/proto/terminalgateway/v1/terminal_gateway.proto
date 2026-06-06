@@ -4,70 +4,40 @@ package posnet.terminalgateway.v1;
 
 option go_package = "github.com/juantevez/go-posnet/pkg/proto/terminalgateway/v1;terminalgatewayv1";
 
-import "google/protobuf/timestamp.proto";
-
-// TerminalGatewayService expone operaciones síncronas del BC Terminal Gateway.
-//
-// Consumidores:
-//   - Notification BC: llama SendReceipt para enviar el comprobante al terminal
-//     vía WebSocket sin necesidad de conocer la gestión de sesiones.
-//
-// NOTA: la comunicación principal del Gateway con los terminales es WebSocket.
-// Este servicio gRPC es solo para llamadas internas entre BCs.
+// TerminalGatewayService — llamado por Notification para entregar comprobantes.
 service TerminalGatewayService {
-
-  // SendReceipt envía el payload del comprobante al WebSocket del terminal.
-  // Retorna NOT_CONNECTED si el terminal no tiene sesión WebSocket activa.
   rpc SendReceipt(SendReceiptRequest) returns (SendReceiptResponse);
-
-  // GetTerminalStatus retorna el estado de conexión de un terminal.
-  // Usado por operaciones y monitoreo — no está en el critical path.
   rpc GetTerminalStatus(GetTerminalStatusRequest) returns (GetTerminalStatusResponse);
 }
 
 // ─── SendReceipt ──────────────────────────────────────────────────────────────
 
 message SendReceiptRequest {
-  // terminal_id identifica el terminal destino del comprobante.
-  string terminal_id = 1;
-
-  // transaction_id es el ID de la transacción — para trazabilidad.
-  string transaction_id = 2;
-
-  // receipt contiene los datos del comprobante a mostrar en el terminal.
-  Receipt receipt = 3;
+  string  terminal_id    = 1;
+  string  transaction_id = 2;
+  Receipt receipt        = 3;
 }
 
 message SendReceiptResponse {
-  // delivered indica si el comprobante llegó al terminal exitosamente.
-  bool delivered = 1;
-
-  // error_reason describe el motivo si delivered es false.
-  // Valores posibles: "NOT_CONNECTED", "SESSION_EXPIRED", "SEND_FAILED"
+  bool   delivered    = 1;
   string error_reason = 2;
 }
 
-// Receipt contiene los datos del comprobante de la transacción.
 message Receipt {
-  string transaction_id  = 1;
-  string merchant_name   = 2;
-  string merchant_address = 3;
-  string terminal_code   = 4;  // ID físico del terminal (ej: "TRM-0042")
-
-  // Resultado de la transacción
-  ReceiptResult result   = 5;
-  string auth_code       = 6;  // Solo si result == APPROVED
-  string rejection_code  = 7;  // Solo si result == REJECTED
-  string rejection_reason = 8; // Solo si result == REJECTED
-
-  // Datos financieros
-  int64  amount_cents    = 9;
-  string currency        = 10; // ISO 4217
-  string card_last4      = 11;
-  string card_network    = 12;
-  string entry_mode      = 13; // CHIP | CONTACTLESS | MAGSTRIPE
-
-  google.protobuf.Timestamp transaction_at = 14;
+  string        transaction_id   = 1;
+  string        merchant_name    = 2;
+  string        merchant_address = 3;
+  string        terminal_code    = 4;
+  ReceiptResult result           = 5;
+  string        auth_code        = 6;
+  string        rejection_code   = 7;
+  string        rejection_reason = 8;
+  int64         amount_cents     = 9;
+  string        currency         = 10;
+  string        card_last4       = 11;
+  string        card_network     = 12;
+  string        entry_mode       = 13;
+  string        transaction_at   = 14; // RFC3339 — sin timestamp.proto
 }
 
 enum ReceiptResult {
@@ -84,10 +54,10 @@ message GetTerminalStatusRequest {
 }
 
 message GetTerminalStatusResponse {
-  string terminal_id       = 1;
-  TerminalConnectionStatus status = 2;
-  string merchant_id       = 3;
-  google.protobuf.Timestamp connected_since = 4; // Solo si CONNECTED
+  string                   terminal_id     = 1;
+  TerminalConnectionStatus status          = 2;
+  string                   merchant_id     = 3;
+  string                   connected_since = 4; // RFC3339
 }
 
 enum TerminalConnectionStatus {

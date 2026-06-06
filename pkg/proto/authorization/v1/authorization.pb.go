@@ -7,13 +7,11 @@
 package authorizationv1
 
 import (
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
-
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -132,27 +130,26 @@ func (x *GetTransactionStatusRequest) GetTransactionId() string {
 }
 
 type GetTransactionStatusResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TransactionId string                 `protobuf:"bytes,1,opt,name=transaction_id,json=transactionId,proto3" json:"transaction_id,omitempty"`
-	TerminalId    string                 `protobuf:"bytes,2,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
-	MerchantId    string                 `protobuf:"bytes,3,opt,name=merchant_id,json=merchantId,proto3" json:"merchant_id,omitempty"`
-	State         TransactionState       `protobuf:"varint,4,opt,name=state,proto3,enum=posnet.authorization.v1.TransactionState" json:"state,omitempty"`
-	AmountCents   int64                  `protobuf:"varint,5,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"`
-	Currency      string                 `protobuf:"bytes,6,opt,name=currency,proto3" json:"currency,omitempty"`
-	CardLast4     string                 `protobuf:"bytes,7,opt,name=card_last4,json=cardLast4,proto3" json:"card_last4,omitempty"`
-	CardNetwork   string                 `protobuf:"bytes,8,opt,name=card_network,json=cardNetwork,proto3" json:"card_network,omitempty"`
-	EntryMode     string                 `protobuf:"bytes,9,opt,name=entry_mode,json=entryMode,proto3" json:"entry_mode,omitempty"`
-	// Resultado (solo uno de los dos estará presente)
-	AuthCode        string `protobuf:"bytes,10,opt,name=auth_code,json=authCode,proto3" json:"auth_code,omitempty"`                      // Si state == APPROVED
-	RejectionCode   string `protobuf:"bytes,11,opt,name=rejection_code,json=rejectionCode,proto3" json:"rejection_code,omitempty"`       // Si state == REJECTED
-	RejectionReason string `protobuf:"bytes,12,opt,name=rejection_reason,json=rejectionReason,proto3" json:"rejection_reason,omitempty"` // Si state == REJECTED
-	RejectionSource string `protobuf:"bytes,13,opt,name=rejection_source,json=rejectionSource,proto3" json:"rejection_source,omitempty"` // ACQUIRER | FRAUD | TIMEOUT | VALIDATION
-	// Antifraude
-	FraudScore    int32                  `protobuf:"varint,14,opt,name=fraud_score,json=fraudScore,proto3" json:"fraud_score,omitempty"`
-	FraudDecision string                 `protobuf:"bytes,15,opt,name=fraud_decision,json=fraudDecision,proto3" json:"fraud_decision,omitempty"` // APPROVE | REJECT | REVIEW
-	ReceivedAt    *timestamppb.Timestamp `protobuf:"bytes,16,opt,name=received_at,json=receivedAt,proto3" json:"received_at,omitempty"`
-	AuthorizedAt  *timestamppb.Timestamp `protobuf:"bytes,17,opt,name=authorized_at,json=authorizedAt,proto3" json:"authorized_at,omitempty"` // Solo si APPROVED
-	RejectedAt    *timestamppb.Timestamp `protobuf:"bytes,18,opt,name=rejected_at,json=rejectedAt,proto3" json:"rejected_at,omitempty"`       // Solo si REJECTED
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	TransactionId   string                 `protobuf:"bytes,1,opt,name=transaction_id,json=transactionId,proto3" json:"transaction_id,omitempty"`
+	TerminalId      string                 `protobuf:"bytes,2,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
+	MerchantId      string                 `protobuf:"bytes,3,opt,name=merchant_id,json=merchantId,proto3" json:"merchant_id,omitempty"`
+	State           TransactionState       `protobuf:"varint,4,opt,name=state,proto3,enum=posnet.authorization.v1.TransactionState" json:"state,omitempty"`
+	AmountCents     int64                  `protobuf:"varint,5,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"`
+	Currency        string                 `protobuf:"bytes,6,opt,name=currency,proto3" json:"currency,omitempty"`
+	CardLast4       string                 `protobuf:"bytes,7,opt,name=card_last4,json=cardLast4,proto3" json:"card_last4,omitempty"`
+	CardNetwork     string                 `protobuf:"bytes,8,opt,name=card_network,json=cardNetwork,proto3" json:"card_network,omitempty"`
+	EntryMode       string                 `protobuf:"bytes,9,opt,name=entry_mode,json=entryMode,proto3" json:"entry_mode,omitempty"`
+	AuthCode        string                 `protobuf:"bytes,10,opt,name=auth_code,json=authCode,proto3" json:"auth_code,omitempty"`
+	RejectionCode   string                 `protobuf:"bytes,11,opt,name=rejection_code,json=rejectionCode,proto3" json:"rejection_code,omitempty"`
+	RejectionReason string                 `protobuf:"bytes,12,opt,name=rejection_reason,json=rejectionReason,proto3" json:"rejection_reason,omitempty"`
+	RejectionSource string                 `protobuf:"bytes,13,opt,name=rejection_source,json=rejectionSource,proto3" json:"rejection_source,omitempty"`
+	FraudScore      int32                  `protobuf:"varint,14,opt,name=fraud_score,json=fraudScore,proto3" json:"fraud_score,omitempty"`
+	FraudDecision   string                 `protobuf:"bytes,15,opt,name=fraud_decision,json=fraudDecision,proto3" json:"fraud_decision,omitempty"`
+	// Timestamps como RFC3339 string — sin depender de google/protobuf/timestamp.proto
+	ReceivedAt    string `protobuf:"bytes,16,opt,name=received_at,json=receivedAt,proto3" json:"received_at,omitempty"`
+	AuthorizedAt  string `protobuf:"bytes,17,opt,name=authorized_at,json=authorizedAt,proto3" json:"authorized_at,omitempty"`
+	RejectedAt    string `protobuf:"bytes,18,opt,name=rejected_at,json=rejectedAt,proto3" json:"rejected_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -292,33 +289,33 @@ func (x *GetTransactionStatusResponse) GetFraudDecision() string {
 	return ""
 }
 
-func (x *GetTransactionStatusResponse) GetReceivedAt() *timestamppb.Timestamp {
+func (x *GetTransactionStatusResponse) GetReceivedAt() string {
 	if x != nil {
 		return x.ReceivedAt
 	}
-	return nil
+	return ""
 }
 
-func (x *GetTransactionStatusResponse) GetAuthorizedAt() *timestamppb.Timestamp {
+func (x *GetTransactionStatusResponse) GetAuthorizedAt() string {
 	if x != nil {
 		return x.AuthorizedAt
 	}
-	return nil
+	return ""
 }
 
-func (x *GetTransactionStatusResponse) GetRejectedAt() *timestamppb.Timestamp {
+func (x *GetTransactionStatusResponse) GetRejectedAt() string {
 	if x != nil {
 		return x.RejectedAt
 	}
-	return nil
+	return ""
 }
 
 type ListTerminalTransactionsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TerminalId    string                 `protobuf:"bytes,1,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
-	Date          string                 `protobuf:"bytes,2,opt,name=date,proto3" json:"date,omitempty"`                            // "2025-06-04" — fecha del día a consultar
-	PageSize      int32                  `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`   // Máximo 100
-	PageToken     string                 `protobuf:"bytes,4,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"` // Cursor de paginación (vacío = primera página)
+	Date          string                 `protobuf:"bytes,2,opt,name=date,proto3" json:"date,omitempty"`
+	PageSize      int32                  `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken     string                 `protobuf:"bytes,4,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -384,7 +381,7 @@ func (x *ListTerminalTransactionsRequest) GetPageToken() string {
 type ListTerminalTransactionsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Transactions  []*TransactionSummary  `protobuf:"bytes,1,rep,name=transactions,proto3" json:"transactions,omitempty"`
-	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"` // Vacío si no hay más páginas
+	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	TotalCount    int32                  `protobuf:"varint,3,opt,name=total_count,json=totalCount,proto3" json:"total_count,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -447,9 +444,9 @@ type TransactionSummary struct {
 	State         TransactionState       `protobuf:"varint,2,opt,name=state,proto3,enum=posnet.authorization.v1.TransactionState" json:"state,omitempty"`
 	AmountCents   int64                  `protobuf:"varint,3,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"`
 	Currency      string                 `protobuf:"bytes,4,opt,name=currency,proto3" json:"currency,omitempty"`
-	AuthCode      string                 `protobuf:"bytes,5,opt,name=auth_code,json=authCode,proto3" json:"auth_code,omitempty"`                // Solo si APPROVED
-	RejectionCode string                 `protobuf:"bytes,6,opt,name=rejection_code,json=rejectionCode,proto3" json:"rejection_code,omitempty"` // Solo si REJECTED
-	TransactionAt *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=transaction_at,json=transactionAt,proto3" json:"transaction_at,omitempty"`
+	AuthCode      string                 `protobuf:"bytes,5,opt,name=auth_code,json=authCode,proto3" json:"auth_code,omitempty"`
+	RejectionCode string                 `protobuf:"bytes,6,opt,name=rejection_code,json=rejectionCode,proto3" json:"rejection_code,omitempty"`
+	TransactionAt string                 `protobuf:"bytes,7,opt,name=transaction_at,json=transactionAt,proto3" json:"transaction_at,omitempty"` // RFC3339
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -526,20 +523,20 @@ func (x *TransactionSummary) GetRejectionCode() string {
 	return ""
 }
 
-func (x *TransactionSummary) GetTransactionAt() *timestamppb.Timestamp {
+func (x *TransactionSummary) GetTransactionAt() string {
 	if x != nil {
 		return x.TransactionAt
 	}
-	return nil
+	return ""
 }
 
 var File_authorization_proto protoreflect.FileDescriptor
 
 const file_authorization_proto_rawDesc = "" +
 	"\n" +
-	"\x13authorization.proto\x12\x17posnet.authorization.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"D\n" +
+	"\x13authorization.proto\x12\x17posnet.authorization.v1\"D\n" +
 	"\x1bGetTransactionStatusRequest\x12%\n" +
-	"\x0etransaction_id\x18\x01 \x01(\tR\rtransactionId\"\x85\x06\n" +
+	"\x0etransaction_id\x18\x01 \x01(\tR\rtransactionId\"\xb1\x05\n" +
 	"\x1cGetTransactionStatusResponse\x12%\n" +
 	"\x0etransaction_id\x18\x01 \x01(\tR\rtransactionId\x12\x1f\n" +
 	"\vterminal_id\x18\x02 \x01(\tR\n" +
@@ -561,11 +558,11 @@ const file_authorization_proto_rawDesc = "" +
 	"\x10rejection_source\x18\r \x01(\tR\x0frejectionSource\x12\x1f\n" +
 	"\vfraud_score\x18\x0e \x01(\x05R\n" +
 	"fraudScore\x12%\n" +
-	"\x0efraud_decision\x18\x0f \x01(\tR\rfraudDecision\x12;\n" +
-	"\vreceived_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"receivedAt\x12?\n" +
-	"\rauthorized_at\x18\x11 \x01(\v2\x1a.google.protobuf.TimestampR\fauthorizedAt\x12;\n" +
-	"\vrejected_at\x18\x12 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"\x0efraud_decision\x18\x0f \x01(\tR\rfraudDecision\x12\x1f\n" +
+	"\vreceived_at\x18\x10 \x01(\tR\n" +
+	"receivedAt\x12#\n" +
+	"\rauthorized_at\x18\x11 \x01(\tR\fauthorizedAt\x12\x1f\n" +
+	"\vrejected_at\x18\x12 \x01(\tR\n" +
 	"rejectedAt\"\x92\x01\n" +
 	"\x1fListTerminalTransactionsRequest\x12\x1f\n" +
 	"\vterminal_id\x18\x01 \x01(\tR\n" +
@@ -578,15 +575,15 @@ const file_authorization_proto_rawDesc = "" +
 	"\ftransactions\x18\x01 \x03(\v2+.posnet.authorization.v1.TransactionSummaryR\ftransactions\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12\x1f\n" +
 	"\vtotal_count\x18\x03 \x01(\x05R\n" +
-	"totalCount\"\xc2\x02\n" +
+	"totalCount\"\xa6\x02\n" +
 	"\x12TransactionSummary\x12%\n" +
 	"\x0etransaction_id\x18\x01 \x01(\tR\rtransactionId\x12?\n" +
 	"\x05state\x18\x02 \x01(\x0e2).posnet.authorization.v1.TransactionStateR\x05state\x12!\n" +
 	"\famount_cents\x18\x03 \x01(\x03R\vamountCents\x12\x1a\n" +
 	"\bcurrency\x18\x04 \x01(\tR\bcurrency\x12\x1b\n" +
 	"\tauth_code\x18\x05 \x01(\tR\bauthCode\x12%\n" +
-	"\x0erejection_code\x18\x06 \x01(\tR\rrejectionCode\x12A\n" +
-	"\x0etransaction_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\rtransactionAt*\xa2\x02\n" +
+	"\x0erejection_code\x18\x06 \x01(\tR\rrejectionCode\x12%\n" +
+	"\x0etransaction_at\x18\a \x01(\tR\rtransactionAt*\xa2\x02\n" +
 	"\x10TransactionState\x12!\n" +
 	"\x1dTRANSACTION_STATE_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aTRANSACTION_STATE_RECEIVED\x10\x01\x12$\n" +
@@ -598,7 +595,7 @@ const file_authorization_proto_rawDesc = "" +
 	"\x1aTRANSACTION_STATE_REVERSED\x10\a2\xae\x02\n" +
 	"\x14AuthorizationService\x12\x83\x01\n" +
 	"\x14GetTransactionStatus\x124.posnet.authorization.v1.GetTransactionStatusRequest\x1a5.posnet.authorization.v1.GetTransactionStatusResponse\x12\x8f\x01\n" +
-	"\x18ListTerminalTransactions\x128.posnet.authorization.v1.ListTerminalTransactionsRequest\x1a9.posnet.authorization.v1.ListTerminalTransactionsResponseBMZKgithub.com/juantevez/go-posnet/pkg/proto/authorization/v1;authorizationv1b\x06proto3"
+	"\x18ListTerminalTransactions\x128.posnet.authorization.v1.ListTerminalTransactionsRequest\x1a9.posnet.authorization.v1.ListTerminalTransactionsResponseBKZIgithub.com/juantevez/go-posnet/pkg/proto/authorization/v1;authorizationv1b\x06proto3"
 
 var (
 	file_authorization_proto_rawDescOnce sync.Once
@@ -621,25 +618,20 @@ var file_authorization_proto_goTypes = []any{
 	(*ListTerminalTransactionsRequest)(nil),  // 3: posnet.authorization.v1.ListTerminalTransactionsRequest
 	(*ListTerminalTransactionsResponse)(nil), // 4: posnet.authorization.v1.ListTerminalTransactionsResponse
 	(*TransactionSummary)(nil),               // 5: posnet.authorization.v1.TransactionSummary
-	(*timestamppb.Timestamp)(nil),            // 6: google.protobuf.Timestamp
 }
 var file_authorization_proto_depIdxs = []int32{
 	0, // 0: posnet.authorization.v1.GetTransactionStatusResponse.state:type_name -> posnet.authorization.v1.TransactionState
-	6, // 1: posnet.authorization.v1.GetTransactionStatusResponse.received_at:type_name -> google.protobuf.Timestamp
-	6, // 2: posnet.authorization.v1.GetTransactionStatusResponse.authorized_at:type_name -> google.protobuf.Timestamp
-	6, // 3: posnet.authorization.v1.GetTransactionStatusResponse.rejected_at:type_name -> google.protobuf.Timestamp
-	5, // 4: posnet.authorization.v1.ListTerminalTransactionsResponse.transactions:type_name -> posnet.authorization.v1.TransactionSummary
-	0, // 5: posnet.authorization.v1.TransactionSummary.state:type_name -> posnet.authorization.v1.TransactionState
-	6, // 6: posnet.authorization.v1.TransactionSummary.transaction_at:type_name -> google.protobuf.Timestamp
-	1, // 7: posnet.authorization.v1.AuthorizationService.GetTransactionStatus:input_type -> posnet.authorization.v1.GetTransactionStatusRequest
-	3, // 8: posnet.authorization.v1.AuthorizationService.ListTerminalTransactions:input_type -> posnet.authorization.v1.ListTerminalTransactionsRequest
-	2, // 9: posnet.authorization.v1.AuthorizationService.GetTransactionStatus:output_type -> posnet.authorization.v1.GetTransactionStatusResponse
-	4, // 10: posnet.authorization.v1.AuthorizationService.ListTerminalTransactions:output_type -> posnet.authorization.v1.ListTerminalTransactionsResponse
-	9, // [9:11] is the sub-list for method output_type
-	7, // [7:9] is the sub-list for method input_type
-	7, // [7:7] is the sub-list for extension type_name
-	7, // [7:7] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	5, // 1: posnet.authorization.v1.ListTerminalTransactionsResponse.transactions:type_name -> posnet.authorization.v1.TransactionSummary
+	0, // 2: posnet.authorization.v1.TransactionSummary.state:type_name -> posnet.authorization.v1.TransactionState
+	1, // 3: posnet.authorization.v1.AuthorizationService.GetTransactionStatus:input_type -> posnet.authorization.v1.GetTransactionStatusRequest
+	3, // 4: posnet.authorization.v1.AuthorizationService.ListTerminalTransactions:input_type -> posnet.authorization.v1.ListTerminalTransactionsRequest
+	2, // 5: posnet.authorization.v1.AuthorizationService.GetTransactionStatus:output_type -> posnet.authorization.v1.GetTransactionStatusResponse
+	4, // 6: posnet.authorization.v1.AuthorizationService.ListTerminalTransactions:output_type -> posnet.authorization.v1.ListTerminalTransactionsResponse
+	5, // [5:7] is the sub-list for method output_type
+	3, // [3:5] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_authorization_proto_init() }

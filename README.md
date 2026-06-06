@@ -199,7 +199,7 @@ El proyecto usa **un único `go.mod`** en la raíz. No se usa `go work` ni múlt
 ```
 module github.com/juantevez/go-posnet
 
-go 1.22
+go 1.25
 ```
 
 Esto significa que todos los imports internos usan el mismo prefijo:
@@ -385,17 +385,4 @@ posnet_webhook_delivery_failures_total     # Fallos de webhook por comercio
 | [docs/runbooks/incident-response.md](docs/runbooks/incident-response.md) | Respuesta ante incidentes |
 | [docs/runbooks/batch-close-failure.md](docs/runbooks/batch-close-failure.md) | Fallo en cierre de lote |
 | [docs/runbooks/nats-dlq-reprocess.md](docs/runbooks/nats-dlq-reprocess.md) | Reprocesamiento desde DLQ |
-
----
-
-## Estado del proyecto
-
-| BC | Dominio | Aplicación | Infraestructura | Tests |
-|---|---|---|---|---|
-| Terminal Gateway | ✅ Completo | ✅ Completo | ✅ Completo | ⬜ En progreso |
-| Authorization | ✅ Completo | ✅ Completo | ✅ Completo | ⬜ En progreso |
-| Fraud Detection | ✅ Completo | ✅ Completo | ✅ Completo | ⬜ En progreso |
-| Settlement | ⬜ En progreso | ⬜ En progreso | ⬜ En progreso | ⬜ |
-| Notification | ⬜ En progreso | ⬜ En progreso | ⬜ En progreso | ⬜ |
-| Shared Kernel (pkg/) | ✅ Completo | — | — | ⬜ En progreso |
 

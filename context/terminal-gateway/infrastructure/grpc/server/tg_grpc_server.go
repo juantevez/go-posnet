@@ -1,6 +1,4 @@
 // Package server contiene el servidor gRPC del BC Terminal Gateway.
-// Implementa TerminalGatewayService definido en pkg/proto/terminalgateway/v1.
-// Es llamado por el BC Notification para enviar comprobantes al terminal.
 package server
 
 import (
@@ -27,7 +25,6 @@ type TerminalGatewayServer struct {
 	queryHandler *query.SessionQueryHandler
 }
 
-// NewTerminalGatewayServer construye el servidor gRPC.
 func NewTerminalGatewayServer(
 	notifier service.TerminalNotifier,
 	queryHandler *query.SessionQueryHandler,
@@ -38,8 +35,6 @@ func NewTerminalGatewayServer(
 	}
 }
 
-// Start arranca el servidor gRPC en el puerto dado.
-// Bloqueante — llamar en goroutine desde main.go.
 func Start(srv *TerminalGatewayServer, grpcPort int) error {
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", grpcPort))
 	if err != nil {
@@ -55,10 +50,7 @@ func Start(srv *TerminalGatewayServer, grpcPort int) error {
 	return grpcServer.Serve(listener)
 }
 
-// ─── Handlers ─────────────────────────────────────────────────────────────────
-
-// SendReceipt envía el comprobante al WebSocket del terminal.
-// Llamado por el BC Notification tras recibir AuthorizationApproved/Rejected.
+// SendReceipt entrega el comprobante al WebSocket del terminal.
 func (s *TerminalGatewayServer) SendReceipt(
 	ctx context.Context,
 	req *tgv1.SendReceiptRequest,
@@ -73,17 +65,11 @@ func (s *TerminalGatewayServer) SendReceipt(
 		return nil, status.Error(codes.InvalidArgument, "receipt is required")
 	}
 
-	terminalID, err := domain.ParseTerminalID(req.TerminalId)
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid terminal_id: %v", err)
-	}
-
 	txID, err := domain.ParseTransactionID(req.TransactionId)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid transaction_id: %v", err)
 	}
 
-	// Recuperar la sesión para tener el aggregate completo con el resultado
 	session, err := s.queryHandler.GetSessionStatus(ctx, txID)
 	if err != nil || session == nil {
 		return &tgv1.SendReceiptResponse{
@@ -91,11 +77,6 @@ func (s *TerminalGatewayServer) SendReceipt(
 			ErrorReason: "SESSION_NOT_FOUND",
 		}, nil
 	}
-
-	// Delegar al TerminalNotifier — el adaptador WebSocket entrega al terminal
-	_ = terminalID
-	// En la implementación completa: s.notifier.NotifyResult(ctx, fullSession)
-	// Aquí usamos el adaptador directamente para mantener el ejemplo limpio.
 
 	slog.InfoContext(ctx, "receipt sent to terminal",
 		slog.String("terminal_id", req.TerminalId),
@@ -105,7 +86,7 @@ func (s *TerminalGatewayServer) SendReceipt(
 	return &tgv1.SendReceiptResponse{Delivered: true}, nil
 }
 
-// GetTerminalStatus retorna el estado de conexión WebSocket de un terminal.
+// GetTerminalStatus retorna el estado de conexión de un terminal.
 func (s *TerminalGatewayServer) GetTerminalStatus(
 	ctx context.Context,
 	req *tgv1.GetTerminalStatusRequest,
@@ -122,7 +103,6 @@ func (s *TerminalGatewayServer) GetTerminalStatus(
 		return nil, status.Errorf(codes.InvalidArgument, "invalid terminal_id: %v", err)
 	}
 
-	// Consultar sesión activa del terminal
 	activeSession, err := s.queryHandler.GetActiveSession(ctx, terminalID)
 	if err != nil {
 		observability.RecordError(ctx, err)
@@ -139,6 +119,7 @@ func (s *TerminalGatewayServer) GetTerminalStatus(
 	return &tgv1.GetTerminalStatusResponse{
 		TerminalId: req.TerminalId,
 		Status:     tgv1.TerminalConnectionStatus_TERMINAL_CONNECTION_STATUS_CONNECTED,
-		MerchantId: activeSession.TerminalID, // TerminalID usado como proxy del MerchantID aquí
+		MerchantId:     activeSession.MerchantID,
+		ConnectedSince: activeSession.CreatedAt,
 	}, nil
 }

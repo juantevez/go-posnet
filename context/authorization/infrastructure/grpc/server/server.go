@@ -1,6 +1,4 @@
 // Package server contiene el servidor gRPC del BC Authorization.
-// Expone el servicio AuthorizationService definido en pkg/proto/authorization/v1.
-// Solo disponible para herramientas de operación — no está en el critical path.
 package server
 
 import (
@@ -14,7 +12,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/juantevez/go-posnet/context/authorization/application/port"
 	"github.com/juantevez/go-posnet/pkg/domain"
@@ -24,19 +21,16 @@ import (
 )
 
 // AuthorizationServer implementa authv1.AuthorizationServiceServer.
-// Delega todas las operaciones al QueryService de la capa de aplicación.
 type AuthorizationServer struct {
 	authv1.UnimplementedAuthorizationServiceServer
 	queryService port.QueryService
 }
 
-// NewAuthorizationServer construye el servidor gRPC.
 func NewAuthorizationServer(queryService port.QueryService) *AuthorizationServer {
 	return &AuthorizationServer{queryService: queryService}
 }
 
 // Start arranca el servidor gRPC en el puerto dado.
-// Bloqueante — llamar en una goroutine separada desde main.go.
 func Start(srv *AuthorizationServer, grpcPort int) error {
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", grpcPort))
 	if err != nil {
@@ -52,8 +46,6 @@ func Start(srv *AuthorizationServer, grpcPort int) error {
 	slog.Info("gRPC server listening", slog.Int("port", grpcPort))
 	return grpcServer.Serve(listener)
 }
-
-// ─── AuthorizationService handlers ───────────────────────────────────────────
 
 // GetTransactionStatus retorna el estado de una transacción por ID.
 func (s *AuthorizationServer) GetTransactionStatus(
@@ -81,16 +73,15 @@ func (s *AuthorizationServer) GetTransactionStatus(
 	return toProtoStatusResponse(result), nil
 }
 
-// ListTerminalTransactions lista las transacciones de un terminal en un día.
+// ListTerminalTransactions — no implementado aún.
 func (s *AuthorizationServer) ListTerminalTransactions(
 	ctx context.Context,
 	req *authv1.ListTerminalTransactionsRequest,
 ) (*authv1.ListTerminalTransactionsResponse, error) {
-	// TODO: implementar en la iteración siguiente con un ListQuery dedicado.
 	return nil, status.Errorf(codes.Unimplemented, "ListTerminalTransactions not yet implemented")
 }
 
-// ─── Mapper proto ─────────────────────────────────────────────────────────────
+// ─── Mapper ───────────────────────────────────────────────────────────────────
 
 func toProtoStatusResponse(r *port.TransactionStatusResult) *authv1.GetTransactionStatusResponse {
 	resp := &authv1.GetTransactionStatusResponse{
@@ -101,19 +92,10 @@ func toProtoStatusResponse(r *port.TransactionStatusResult) *authv1.GetTransacti
 		AuthCode:        r.AuthCode,
 		RejectionCode:   r.RejectionCode,
 		RejectionReason: r.RejectionReason,
+		// Timestamps como string RFC3339 — sin timestamppb
+		AuthorizedAt: r.AuthorizedAt,
+		RejectedAt:   r.RejectedAt,
 	}
-
-	if r.AuthorizedAt != "" {
-		if t, err := time.Parse(time.RFC3339, r.AuthorizedAt); err == nil {
-			resp.AuthorizedAt = timestamppb.New(t)
-		}
-	}
-	if r.RejectedAt != "" {
-		if t, err := time.Parse(time.RFC3339, r.RejectedAt); err == nil {
-			resp.RejectedAt = timestamppb.New(t)
-		}
-	}
-
 	return resp
 }
 
@@ -131,4 +113,12 @@ func toProtoState(s string) authv1.TransactionState {
 		return v
 	}
 	return authv1.TransactionState_TRANSACTION_STATE_UNSPECIFIED
+}
+
+// parseRFC3339 parsea un string RFC3339 — helper local.
+func parseRFC3339(s string) (time.Time, error) {
+	if s == "" {
+		return time.Time{}, nil
+	}
+	return time.Parse(time.RFC3339, s)
 }

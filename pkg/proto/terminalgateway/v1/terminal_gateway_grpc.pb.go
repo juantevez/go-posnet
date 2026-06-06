@@ -27,20 +27,9 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// TerminalGatewayService expone operaciones síncronas del BC Terminal Gateway.
-//
-// Consumidores:
-//   - Notification BC: llama SendReceipt para enviar el comprobante al terminal
-//     vía WebSocket sin necesidad de conocer la gestión de sesiones.
-//
-// NOTA: la comunicación principal del Gateway con los terminales es WebSocket.
-// Este servicio gRPC es solo para llamadas internas entre BCs.
+// TerminalGatewayService — llamado por Notification para entregar comprobantes.
 type TerminalGatewayServiceClient interface {
-	// SendReceipt envía el payload del comprobante al WebSocket del terminal.
-	// Retorna NOT_CONNECTED si el terminal no tiene sesión WebSocket activa.
 	SendReceipt(ctx context.Context, in *SendReceiptRequest, opts ...grpc.CallOption) (*SendReceiptResponse, error)
-	// GetTerminalStatus retorna el estado de conexión de un terminal.
-	// Usado por operaciones y monitoreo — no está en el critical path.
 	GetTerminalStatus(ctx context.Context, in *GetTerminalStatusRequest, opts ...grpc.CallOption) (*GetTerminalStatusResponse, error)
 }
 
@@ -76,20 +65,9 @@ func (c *terminalGatewayServiceClient) GetTerminalStatus(ctx context.Context, in
 // All implementations must embed UnimplementedTerminalGatewayServiceServer
 // for forward compatibility.
 //
-// TerminalGatewayService expone operaciones síncronas del BC Terminal Gateway.
-//
-// Consumidores:
-//   - Notification BC: llama SendReceipt para enviar el comprobante al terminal
-//     vía WebSocket sin necesidad de conocer la gestión de sesiones.
-//
-// NOTA: la comunicación principal del Gateway con los terminales es WebSocket.
-// Este servicio gRPC es solo para llamadas internas entre BCs.
+// TerminalGatewayService — llamado por Notification para entregar comprobantes.
 type TerminalGatewayServiceServer interface {
-	// SendReceipt envía el payload del comprobante al WebSocket del terminal.
-	// Retorna NOT_CONNECTED si el terminal no tiene sesión WebSocket activa.
 	SendReceipt(context.Context, *SendReceiptRequest) (*SendReceiptResponse, error)
-	// GetTerminalStatus retorna el estado de conexión de un terminal.
-	// Usado por operaciones y monitoreo — no está en el critical path.
 	GetTerminalStatus(context.Context, *GetTerminalStatusRequest) (*GetTerminalStatusResponse, error)
 	mustEmbedUnimplementedTerminalGatewayServiceServer()
 }

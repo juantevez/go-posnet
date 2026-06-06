@@ -28,20 +28,9 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // AuthorizationService expone consultas de solo lectura del BC Authorization.
-//
-// Consumidores:
-//   - Herramientas de operación y soporte (CLI, dashboards internos)
-//   - Tests de integración
-//
-// NOTA: el flujo de autorización es completamente asíncrono vía NATS.
-// Este servicio gRPC es exclusivamente para consultas (lado Q del CQRS).
-// Ningún BC del sistema llama este servicio en el critical path.
+// Solo para herramientas de operación — no está en el critical path.
 type AuthorizationServiceClient interface {
-	// GetTransactionStatus retorna el estado actual de una transacción por ID.
-	// Usado por soporte para verificar el estado de transacciones indeterminadas.
 	GetTransactionStatus(ctx context.Context, in *GetTransactionStatusRequest, opts ...grpc.CallOption) (*GetTransactionStatusResponse, error)
-	// ListTerminalTransactions lista las transacciones de un terminal en un día.
-	// Usado para reconciliación manual y soporte al comercio.
 	ListTerminalTransactions(ctx context.Context, in *ListTerminalTransactionsRequest, opts ...grpc.CallOption) (*ListTerminalTransactionsResponse, error)
 }
 
@@ -78,20 +67,9 @@ func (c *authorizationServiceClient) ListTerminalTransactions(ctx context.Contex
 // for forward compatibility.
 //
 // AuthorizationService expone consultas de solo lectura del BC Authorization.
-//
-// Consumidores:
-//   - Herramientas de operación y soporte (CLI, dashboards internos)
-//   - Tests de integración
-//
-// NOTA: el flujo de autorización es completamente asíncrono vía NATS.
-// Este servicio gRPC es exclusivamente para consultas (lado Q del CQRS).
-// Ningún BC del sistema llama este servicio en el critical path.
+// Solo para herramientas de operación — no está en el critical path.
 type AuthorizationServiceServer interface {
-	// GetTransactionStatus retorna el estado actual de una transacción por ID.
-	// Usado por soporte para verificar el estado de transacciones indeterminadas.
 	GetTransactionStatus(context.Context, *GetTransactionStatusRequest) (*GetTransactionStatusResponse, error)
-	// ListTerminalTransactions lista las transacciones de un terminal en un día.
-	// Usado para reconciliación manual y soporte al comercio.
 	ListTerminalTransactions(context.Context, *ListTerminalTransactionsRequest) (*ListTerminalTransactionsResponse, error)
 	mustEmbedUnimplementedAuthorizationServiceServer()
 }

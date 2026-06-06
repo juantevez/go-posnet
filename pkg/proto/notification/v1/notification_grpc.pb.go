@@ -28,23 +28,10 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// NotificationService expone consultas de estado de notificaciones.
-//
-// Consumidores:
-//   - Soporte técnico: verificar si una notificación llegó al comercio
-//   - Monitoreo: detectar comercios con webhooks fallando sistemáticamente
-//
-// NOTA: el despacho de notificaciones es asíncrono vía NATS.
-// Este servicio gRPC es exclusivamente para consultas y operaciones manuales.
+// NotificationService — consultas y operaciones sobre notificaciones.
 type NotificationServiceClient interface {
-	// GetNotificationStatus retorna el estado de entrega de una notificación.
-	// Incluye el historial de intentos para diagnóstico de fallos.
 	GetNotificationStatus(ctx context.Context, in *GetNotificationStatusRequest, opts ...grpc.CallOption) (*GetNotificationStatusResponse, error)
-	// RetryNotification fuerza un reintento manual de una notificación en estado DEAD.
-	// Solo disponible para operadores con permisos de administración.
 	RetryNotification(ctx context.Context, in *RetryNotificationRequest, opts ...grpc.CallOption) (*RetryNotificationResponse, error)
-	// ListFailedWebhooks lista los webhooks en estado DEAD o RETRYING por comercio.
-	// Usado para identificar comercios con endpoints de webhook caídos.
 	ListFailedWebhooks(ctx context.Context, in *ListFailedWebhooksRequest, opts ...grpc.CallOption) (*ListFailedWebhooksResponse, error)
 }
 
@@ -90,23 +77,10 @@ func (c *notificationServiceClient) ListFailedWebhooks(ctx context.Context, in *
 // All implementations must embed UnimplementedNotificationServiceServer
 // for forward compatibility.
 //
-// NotificationService expone consultas de estado de notificaciones.
-//
-// Consumidores:
-//   - Soporte técnico: verificar si una notificación llegó al comercio
-//   - Monitoreo: detectar comercios con webhooks fallando sistemáticamente
-//
-// NOTA: el despacho de notificaciones es asíncrono vía NATS.
-// Este servicio gRPC es exclusivamente para consultas y operaciones manuales.
+// NotificationService — consultas y operaciones sobre notificaciones.
 type NotificationServiceServer interface {
-	// GetNotificationStatus retorna el estado de entrega de una notificación.
-	// Incluye el historial de intentos para diagnóstico de fallos.
 	GetNotificationStatus(context.Context, *GetNotificationStatusRequest) (*GetNotificationStatusResponse, error)
-	// RetryNotification fuerza un reintento manual de una notificación en estado DEAD.
-	// Solo disponible para operadores con permisos de administración.
 	RetryNotification(context.Context, *RetryNotificationRequest) (*RetryNotificationResponse, error)
-	// ListFailedWebhooks lista los webhooks en estado DEAD o RETRYING por comercio.
-	// Usado para identificar comercios con endpoints de webhook caídos.
 	ListFailedWebhooks(context.Context, *ListFailedWebhooksRequest) (*ListFailedWebhooksResponse, error)
 	mustEmbedUnimplementedNotificationServiceServer()
 }

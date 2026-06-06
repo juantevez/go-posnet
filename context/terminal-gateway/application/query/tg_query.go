@@ -25,10 +25,12 @@ func NewSessionQueryHandler(repo repository.PaymentSessionRepository) *SessionQu
 type SessionStatusResult struct {
 	TransactionID   string
 	TerminalID      string
+	MerchantID      string
 	State           string
 	Channel         string
 	AmountCents     int64
 	Currency        string
+	CreatedAt       string
 	ExpiresAt       string
 	TTLSeconds      int
 	AuthCode        string // Solo si APPROVED
@@ -55,10 +57,12 @@ func (h *SessionQueryHandler) GetSessionStatus(
 	result := &SessionStatusResult{
 		TransactionID: session.ID().String(),
 		TerminalID:    session.TerminalID().String(),
+		MerchantID:    session.MerchantID().String(),
 		State:         session.State().String(),
 		Channel:       session.Channel().String(),
 		AmountCents:   session.Amount().Cents(),
 		Currency:      session.Amount().Currency().String(),
+		CreatedAt:     session.CreatedAt().Format("2006-01-02T15:04:05Z"),
 		ExpiresAt:     session.ExpiresAt().Format("2006-01-02T15:04:05Z"),
 		TTLSeconds:    int(session.TTLRemaining().Seconds()),
 	}
@@ -93,10 +97,12 @@ func (h *SessionQueryHandler) GetActiveSession(
 	return &SessionStatusResult{
 		TransactionID: session.ID().String(),
 		TerminalID:    session.TerminalID().String(),
+		MerchantID:    session.MerchantID().String(),
 		State:         session.State().String(),
 		Channel:       session.Channel().String(),
 		AmountCents:   session.Amount().Cents(),
 		Currency:      session.Amount().Currency().String(),
+		CreatedAt:     session.CreatedAt().Format("2006-01-02T15:04:05Z"),
 		ExpiresAt:     session.ExpiresAt().Format("2006-01-02T15:04:05Z"),
 		TTLSeconds:    int(session.TTLRemaining().Seconds()),
 	}, nil

@@ -1,0 +1,271 @@
+version: "3.9"
+
+# =============================================================================
+# posnet-backend — Docker Compose desarrollo local
+# Levanta: Postgres, NATS, OTEL Collector + los 5 BCs
+#
+# Uso:
+#   docker compose -f deployments/docker/docker-compose.dev.yml up --build
+#   docker compose -f deployments/docker/docker-compose.dev.yml down -v
+# =============================================================================
+
+networks:
+  posnet:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  nats_data:
+
+services:
+
+  # ─── Infraestructura ────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: posnet-postgres
+    restart: unless-stopped
+    networks: [posnet]
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-posnet}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-posnet123}
+      POSTGRES_DB: ${POSTGRES_DB:-posnet}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Init script: crea la DB si no existe (ya lo hace POSTGRES_DB)
+      # Los schemas y tablas los crean las migraciones de cada BC al arrancar
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-posnet} -d ${POSTGRES_DB:-posnet}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  nats:
+    image: nats:2.10-alpine
+    container_name: posnet-nats
+    restart: unless-stopped
+    networks: [posnet]
+    ports:
+      - "4222:4222"   # Clientes
+      - "8222:8222"   # Monitoring HTTP
+    command: >
+      --jetstream
+      --store_dir /data
+      --http_port 8222
+      --max_payload 8MB
+    volumes:
+      - nats_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8222/healthz || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.100.0
+    container_name: posnet-otel
+    restart: unless-stopped
+    networks: [posnet]
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "8888:8888"   # Métricas del propio collector
+    volumes:
+      - ./otel-collector-config.yml:/etc/otel/config.yml
+    command: ["--config=/etc/otel/config.yml"]
+
+  # ─── Mock del adquirente externo ─────────────────────────────────────────────
+  # Simulador simple del host adquirente — responde APPROVED a todo
+  # Reemplazar con wiremock o un mock real en etapas avanzadas
+
+  acquirer-mock:
+    image: mockserver/mockserver:5.15.0
+    container_name: posnet-acquirer-mock
+    restart: unless-stopped
+    networks: [posnet]
+    ports:
+      - "9100:9100"
+    environment:
+      MOCKSERVER_SERVER_PORT: 9100
+
+  # ─── Mock de webhook del comercio ─────────────────────────────────────────────
+  webhook-mock:
+    image: mockserver/mockserver:5.15.0
+    container_name: posnet-webhook-mock
+    restart: unless-stopped
+    networks: [posnet]
+    ports:
+      - "9200:9200"
+    environment:
+      MOCKSERVER_SERVER_PORT: 9200
+
+  # ─── Bounded Contexts ────────────────────────────────────────────────────────
+
+  authorization:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile.authorization
+    container_name: posnet-authorization
+    restart: unless-stopped
+    networks: [posnet]
+    ports:
+      - "8080:8080"   # HTTP
+      - "9090:9090"   # gRPC
+    env_file: ../../.env
+    environment:
+      HTTP_PORT: 8080
+      GRPC_PORT: 9090
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-posnet}:${POSTGRES_PASSWORD:-posnet123}@postgres:5432/${POSTGRES_DB:-posnet}?sslmode=disable
+      NATS_URL: nats://nats:4222
+      OTEL_SERVICE_NAME: posnet-authorization
+      MIGRATIONS_DIR: migrations/authorization
+      ACQUIRER_HOST: acquirer-mock
+      ACQUIRER_PORT: 9100
+      ACQUIRER_TLS_CERT: ""
+      ACQUIRER_TLS_KEY: ""
+      ACQUIRER_TLS_CA: ""
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  terminal-gateway:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile.terminal-gateway
+    container_name: posnet-terminal-gateway
+    restart: unless-stopped
+    networks: [posnet]
+    ports:
+      - "8081:8081"   # HTTP
+      - "8082:8082"   # WebSocket
+      - "9091:9091"   # gRPC
+    env_file: ../../.env
+    environment:
+      HTTP_PORT: 8081
+      WS_PORT: 8082
+      GRPC_PORT: 9091
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-posnet}:${POSTGRES_PASSWORD:-posnet123}@postgres:5432/${POSTGRES_DB:-posnet}?sslmode=disable
+      NATS_URL: nats://nats:4222
+      OTEL_SERVICE_NAME: posnet-terminal-gateway
+      MIGRATIONS_DIR: migrations/terminal-gateway
+      TLS_CERT_PATH: ""
+      TLS_KEY_PATH: ""
+      TLS_CA_PATH: ""
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8081/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  fraud-detection:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile.fraud-detection
+    container_name: posnet-fraud-detection
+    restart: unless-stopped
+    networks: [posnet]
+    ports:
+      - "8083:8083"   # HTTP
+      - "9092:9092"   # gRPC
+    env_file: ../../.env
+    environment:
+      HTTP_PORT: 8083
+      GRPC_PORT: 9092
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-posnet}:${POSTGRES_PASSWORD:-posnet123}@postgres:5432/${POSTGRES_DB:-posnet}?sslmode=disable
+      NATS_URL: nats://nats:4222
+      OTEL_SERVICE_NAME: posnet-fraud-detection
+      MIGRATIONS_DIR: migrations/fraud-detection
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8083/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  settlement:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile.settlement
+    container_name: posnet-settlement
+    restart: unless-stopped
+    networks: [posnet]
+    ports:
+      - "8084:8084"   # HTTP
+      - "9093:9093"   # gRPC
+    env_file: ../../.env
+    environment:
+      HTTP_PORT: 8084
+      GRPC_PORT: 9093
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-posnet}:${POSTGRES_PASSWORD:-posnet123}@postgres:5432/${POSTGRES_DB:-posnet}?sslmode=disable
+      NATS_URL: nats://nats:4222
+      OTEL_SERVICE_NAME: posnet-settlement
+      MIGRATIONS_DIR: migrations/settlement
+      SETTLEMENT_MDR_PERCENT: 2.5
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8084/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  notification:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile.notification
+    container_name: posnet-notification
+    restart: unless-stopped
+    networks: [posnet]
+    ports:
+      - "8085:8085"   # HTTP
+      - "9094:9094"   # gRPC
+    env_file: ../../.env
+    environment:
+      HTTP_PORT: 8085
+      GRPC_PORT: 9094
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-posnet}:${POSTGRES_PASSWORD:-posnet123}@postgres:5432/${POSTGRES_DB:-posnet}?sslmode=disable
+      NATS_URL: nats://nats:4222
+      OTEL_SERVICE_NAME: posnet-notification
+      MIGRATIONS_DIR: migrations/notification
+      TERMINAL_GATEWAY_GRPC_ADDR: terminal-gateway:9091
+      WEBHOOK_DEFAULT_ENDPOINT: http://webhook-mock:9200/webhook
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      terminal-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8085/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+      
