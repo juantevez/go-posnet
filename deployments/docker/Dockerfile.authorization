@@ -36,8 +36,6 @@ WORKDIR /app
 # Copiar solo el binario compilado
 COPY --from=builder /app/bin/authorization .
 
-# Copiar las migraciones del BC
-COPY --from=builder /app/migrations/authorization ./migrations/authorization
 
 # Usuario no-root por seguridad
 RUN addgroup -S posnet && adduser -S posnet -G posnet

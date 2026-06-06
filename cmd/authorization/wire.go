@@ -83,9 +83,10 @@ func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 	eventPub := natsinfra.NewEventPublisher(natsPub)
 
 	// ── Aplicación ─────────────────────────────────────────────────────────────
+	acquirerGW := pginfra.NewMockAcquirerGateway()
 	authHandler := command.NewAuthorizationHandler(
 		txRepo,
-		nil, // acquirerGW — reemplazar con instancia real cuando esté implementado
+		acquirerGW, // acquirerGW — reemplazar con instancia real cuando esté implementado
 		eventPub,
 		idempotency,
 		pool,
