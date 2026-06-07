@@ -109,7 +109,8 @@ func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 	grpcSrv := grpcserver.NewTerminalGatewayServer(nil, queryHandler) // notifier = nil hasta websocket/
 
 	// HTTP Server — healthz, readyz, metrics, operaciones REST
-	router := httpinfra.NewRouter(sessionHandler, queryHandler, pool)
+	//router := httpinfra.NewRouter(sessionHandler, queryHandler, pool)
+	router := httpinfra.NewRouter(sessionHandler, queryHandler, natsPub, pool)
 	httpSrv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.HTTPPort),
 		Handler:      router,
