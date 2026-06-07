@@ -15,6 +15,7 @@ import (
 	httpinfra "github.com/juantevez/go-posnet/context/terminal-gateway/infrastructure/http"
 	natsinfra "github.com/juantevez/go-posnet/context/terminal-gateway/infrastructure/nats"
 	pginfra "github.com/juantevez/go-posnet/context/terminal-gateway/infrastructure/postgres"
+	wsinfra "github.com/juantevez/go-posnet/context/terminal-gateway/infrastructure/websocket"
 	"github.com/juantevez/go-posnet/pkg/natsutil"
 	"github.com/juantevez/go-posnet/pkg/pgutil"
 	nats "github.com/nats-io/nats.go"
@@ -86,14 +87,12 @@ func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 	// TerminalNotifier — implementado por el adaptador WebSocket.
 	// TODO: instanciar websocket.NewNotifier(wsSrv) cuando esté implementado.
 	// Por ahora nil; reemplazar en la siguiente iteración.
-	var notifier interface{} = nil
-	_ = notifier
 
 	// ── Aplicación ─────────────────────────────────────────────────────────────
 	sessionHandler := command.NewSessionHandler(
 		sessionRepo,
 		terminalRepo,
-		nil, // notifier — reemplazar con instancia real
+		wsinfra.NewMockNotifier(), // MockNotifier para MVP
 		eventPub,
 		idempotency,
 		pool,

@@ -89,7 +89,7 @@ func (h *SessionHandler) CreateSession(ctx context.Context, cmd port.CreateSessi
 	}
 
 	// Verificar que el terminal esté activo
-	terminal, err := h.terminalRepo.FindByCertificateCN(ctx, cmd.TerminalID)
+	terminal, err := h.terminalRepo.FindByID(ctx, terminalID)
 	if err != nil {
 		return nil, fmt.Errorf("CreateSession: find terminal: %w", err)
 	}

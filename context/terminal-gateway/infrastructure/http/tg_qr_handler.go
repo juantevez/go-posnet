@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/juantevez/go-posnet/context/terminal-gateway/application/port"
@@ -45,18 +46,6 @@ func (h *QRHandler) RegisterQRRoutes(mux *http.ServeMux) {
 }
 
 // POST /api/sessions/create
-// Crea una PaymentSession y retorna los datos necesarios para que
-// el frontend genere el QR y muestre el monto.
-//
-// Request:
-//
-//	{ "amount_cents": 150000, "currency": "ARS",
-//	  "terminal_id": "...", "merchant_id": "..." }
-//
-// Response:
-//
-//	{ "transaction_id": "...", "qr_content": "http://192.168.x.x:5173/pay/{id}",
-//	  "ttl_seconds": 300, "amount_cents": 150000, "currency": "ARS" }
 func (h *QRHandler) handleCreateQRSession(w http.ResponseWriter, r *http.Request) {
 	ctx, span := observability.StartSpan(r.Context(), "http.CreateQRSession")
 	defer span.End()
@@ -105,8 +94,8 @@ func (h *QRHandler) handleCreateQRSession(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// qr_content apunta al frontend (posnet-frontend) con la IP local
-	// El celular escanea este QR y abre la página de pago del frontend
+	// qr_content apunta al frontend con la IP del host (no del container Docker)
+	// Configurar POSNET_HOST=192.168.0.2 en el docker-compose para la IP correcta
 	localIP := getLocalIP()
 	qrContent := fmt.Sprintf("http://%s:5173/pay/%s", localIP, result.TransactionID)
 
@@ -121,18 +110,6 @@ func (h *QRHandler) handleCreateQRSession(w http.ResponseWriter, r *http.Request
 }
 
 // POST /api/sessions/{id}/pay
-// Simula el pago del cliente: publica TransactionReceived a NATS
-// disparando la Saga completa (Fraud → Acquirer → APPROVED/REJECTED).
-//
-// Llamado desde la página /pay/{id} del frontend cuando el cliente confirma.
-//
-// Request:
-//
-//	{ "card_last4": "1234", "card_network": "VISA", "entry_mode": "QR" }
-//
-// Response 202:
-//
-//	{ "status": "processing", "transaction_id": "..." }
 func (h *QRHandler) handleSimulatePay(w http.ResponseWriter, r *http.Request) {
 	ctx, span := observability.StartSpan(r.Context(), "http.SimulatePay")
 	defer span.End()
@@ -173,7 +150,7 @@ func (h *QRHandler) handleSimulatePay(w http.ResponseWriter, r *http.Request) {
 		MerchantID:    session.MerchantID,
 		AmountCents:   session.AmountCents,
 		Currency:      session.Currency,
-		STAN:          int(time.Now().UnixNano() % 999998 + 1),
+		STAN:          int(time.Now().UnixNano()%999998 + 1),
 		EntryMode:     req.EntryMode,
 		CardLast4:     req.CardLast4,
 		CardNetwork:   req.CardNetwork,
@@ -201,13 +178,6 @@ func (h *QRHandler) handleSimulatePay(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /api/sessions/{id}/status
-// Polling del estado de la sesión — usado por el cajero y por la página del celular.
-//
-// Response:
-//
-//	{ "transaction_id": "...", "state": "APPROVED|REJECTED|PROCESSING|EXPIRED",
-//	  "auth_code": "A00002", "rejection_reason": "...",
-//	  "amount_cents": 150000, "currency": "ARS", "ttl_seconds": 247 }
 func (h *QRHandler) handleSessionStatus(w http.ResponseWriter, r *http.Request) {
 	ctx, span := observability.StartSpan(r.Context(), "http.SessionStatus")
 	defer span.End()
@@ -244,9 +214,14 @@ func (h *QRHandler) handleSessionStatus(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// getLocalIP detecta la IP local de red — para que el QR sea accesible desde celulares
-// en la misma WiFi sin configuración manual.
+// getLocalIP retorna la IP del host configurada via POSNET_HOST,
+// o detecta la IP de red como fallback.
+// En Docker siempre configurar POSNET_HOST con la IP real del host
+// (ej: 192.168.0.2) para que el celular pueda acceder al frontend.
 func getLocalIP() string {
+	if host := os.Getenv("POSNET_HOST"); host != "" {
+		return host
+	}
 	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err != nil {
 		return "localhost"
