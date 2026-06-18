@@ -18,6 +18,7 @@ import (
 	pkgerrors "github.com/juantevez/go-posnet/pkg/errors"
 	"github.com/juantevez/go-posnet/pkg/natsutil"
 	"github.com/juantevez/go-posnet/pkg/observability"
+	"github.com/juantevez/go-posnet/pkg/outbox"
 	"github.com/juantevez/go-posnet/pkg/pgutil"
 )
 
@@ -29,6 +30,7 @@ type SessionHandler struct {
 	notifier     service.TerminalNotifier
 	publisher    service.EventPublisher
 	idempotency  *natsutil.IdempotencyStore
+	outbox       *outbox.Store
 	pool         *pgxpool.Pool
 }
 
@@ -39,6 +41,7 @@ func NewSessionHandler(
 	notifier service.TerminalNotifier,
 	publisher service.EventPublisher,
 	idempotency *natsutil.IdempotencyStore,
+	outboxStore *outbox.Store,
 	pool *pgxpool.Pool,
 ) *SessionHandler {
 	return &SessionHandler{
@@ -47,6 +50,7 @@ func NewSessionHandler(
 		notifier:     notifier,
 		publisher:    publisher,
 		idempotency:  idempotency,
+		outbox:       outboxStore,
 		pool:         pool,
 	}
 }
@@ -133,7 +137,10 @@ func (h *SessionHandler) CreateSession(ctx context.Context, cmd port.CreateSessi
 	}, nil
 }
 
-// ProcessPayment procesa el mensaje ISO 8583 y publica TransactionReceived a NATS.
+// ProcessPayment procesa el mensaje ISO 8583 e inicia la Saga de autorización.
+// Usa el patrón Transactional Outbox: el Save de la sesión y la entrada en el outbox
+// se realizan en la misma transacción Postgres, eliminando el dual-write.
+// El Relay publica el evento a NATS de forma asíncrona con reintentos automáticos.
 func (h *SessionHandler) ProcessPayment(ctx context.Context, cmd port.ProcessPaymentCommand) error {
 	ctx, span := observability.StartSpan(ctx, "command.ProcessPayment")
 	defer span.End()
@@ -152,16 +159,20 @@ func (h *SessionHandler) ProcessPayment(ctx context.Context, cmd port.ProcessPay
 		return fmt.Errorf("ProcessPayment: start processing: %w", err)
 	}
 
-	if err := h.sessionRepo.Save(ctx, session); err != nil {
-		return fmt.Errorf("ProcessPayment: save session: %w", err)
+	subject, eventID, payload, err := h.publisher.BuildTransactionReceived(ctx, session, cmd.ISO8583Raw, cmd.EMVDataBase64)
+	if err != nil {
+		return fmt.Errorf("ProcessPayment: build event: %w", err)
 	}
 
-	// Publicar evento a NATS — dispara la Saga en Authorization BC
-	if err := h.publisher.PublishTransactionReceived(ctx, session, cmd.ISO8583Raw, cmd.EMVDataBase64); err != nil {
-		return fmt.Errorf("ProcessPayment: publish transaction received: %w", err)
-	}
-
-	return nil
+	// Atómico: Save de la sesión + inserción en outbox en la misma TX.
+	// Si el pod muere tras el commit, el Relay recupera la entrada del outbox
+	// y publica a NATS en el próximo ciclo. JetStream deduplica por event_id.
+	return pgutil.WithReadCommitted(ctx, h.pool, func(dbTx pgx.Tx) error {
+		if err := h.sessionRepo.SaveTx(ctx, dbTx, session); err != nil {
+			return fmt.Errorf("save session: %w", err)
+		}
+		return h.outbox.InsertTx(ctx, dbTx, subject, eventID, payload)
+	})
 }
 
 // ApplyApproval recibe el resultado aprobado desde NATS y notifica al terminal.

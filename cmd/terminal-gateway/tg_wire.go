@@ -17,17 +17,19 @@ import (
 	pginfra "github.com/juantevez/go-posnet/context/terminal-gateway/infrastructure/postgres"
 	wsinfra "github.com/juantevez/go-posnet/context/terminal-gateway/infrastructure/websocket"
 	"github.com/juantevez/go-posnet/pkg/natsutil"
+	"github.com/juantevez/go-posnet/pkg/outbox"
 	"github.com/juantevez/go-posnet/pkg/pgutil"
 	nats "github.com/nats-io/nats.go"
 )
 
 // app agrupa todos los componentes del servicio y sus recursos abiertos.
 type app struct {
-	pool       *pgxpool.Pool
-	natsConn   *nats.Conn
-	subscriber *natsinfra.TG_Subscriber
-	grpcSrv    *grpcserver.TerminalGatewayServer
-	httpSrv    *http.Server
+	pool        *pgxpool.Pool
+	natsConn    *nats.Conn
+	subscriber  *natsinfra.TG_Subscriber
+	outboxRelay *outbox.Relay
+	grpcSrv     *grpcserver.TerminalGatewayServer
+	httpSrv     *http.Server
 	// wsSrv   *websocket.Server  ← agregar cuando se implemente infrastructure/websocket/
 }
 
@@ -83,6 +85,8 @@ func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 	idempotency := natsutil.NewIdempotencyStore(pool, "terminal_gateway")
 	natsPub := natsutil.NewPublisher(js)
 	eventPub := natsinfra.NewEventPublisher(natsPub)
+	outboxStore := outbox.NewStore("terminal_gateway")
+	outboxRelay := outbox.NewRelay(pool, js, "terminal_gateway", 500*time.Millisecond, 50)
 
 	// TerminalNotifier — implementado por el adaptador WebSocket.
 	// TODO: instanciar websocket.NewNotifier(wsSrv) cuando esté implementado.
@@ -95,6 +99,7 @@ func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 		wsinfra.NewMockNotifier(), // MockNotifier para MVP
 		eventPub,
 		idempotency,
+		outboxStore,
 		pool,
 	)
 	queryHandler := query.NewSessionQueryHandler(sessionRepo)
@@ -123,11 +128,12 @@ func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 	// Se arrancará en cfg.WSPort en app.start()
 
 	return &app{
-		pool:       pool,
-		natsConn:   natsConn,
-		subscriber: subscriber,
-		grpcSrv:    grpcSrv,
-		httpSrv:    httpSrv,
+		pool:        pool,
+		natsConn:    natsConn,
+		subscriber:  subscriber,
+		outboxRelay: outboxRelay,
+		grpcSrv:     grpcSrv,
+		httpSrv:     httpSrv,
 	}, nil
 }
 
@@ -157,6 +163,10 @@ func (a *app) start(ctx context.Context) error {
 
 	// WebSocket server — en puerto separado con mTLS
 	// TODO: go func() { wsSrv.ListenAndServeTLS(cfg.WSPort, cfg.TLS) }()
+
+	// Outbox relay — publica eventos pendientes a NATS con reintentos automáticos
+	go a.outboxRelay.Run(ctx)
+	slog.Info("outbox relay active")
 
 	// Job de limpieza de sesiones expiradas
 	go a.runExpiredSessionsCleaner(ctx)

@@ -60,3 +60,17 @@ CREATE TABLE terminal_gateway.processed_events (
     event_id     UUID        PRIMARY KEY,
     processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- ─── outbox (Transactional Outbox pattern) ────────────────────────────────────
+-- Los eventos se insertan aquí atómicamente junto con el Save de la sesión.
+-- El Relay los publica a NATS JetStream y los elimina tras publicar con éxito.
+
+CREATE TABLE terminal_gateway.outbox (
+    id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    subject    TEXT        NOT NULL,
+    event_id   TEXT        NOT NULL,   -- usado como Nats-Msg-Id para dedup en JetStream
+    payload    BYTEA       NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_tg_outbox_created_at ON terminal_gateway.outbox(created_at);

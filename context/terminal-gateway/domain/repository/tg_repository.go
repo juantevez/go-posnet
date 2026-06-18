@@ -4,6 +4,7 @@ package repository
 import (
 	"context"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/aggregate"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/entity"
 	"github.com/juantevez/go-posnet/pkg/domain"
@@ -13,6 +14,10 @@ import (
 type PaymentSessionRepository interface {
 	// Save persiste una sesión nueva o actualiza una existente (UPSERT).
 	Save(ctx context.Context, session *aggregate.PaymentSession) error
+
+	// SaveTx persiste la sesión dentro de una transacción Postgres existente.
+	// Usar cuando la persistencia debe ser atómica con otra operación (ej: outbox).
+	SaveTx(ctx context.Context, tx pgx.Tx, session *aggregate.PaymentSession) error
 
 	// FindByID recupera una sesión por su TransactionID.
 	FindByID(ctx context.Context, id domain.TransactionID) (*aggregate.PaymentSession, error)

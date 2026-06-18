@@ -53,6 +53,37 @@ func (r *PaymentSessionRepo) Save(ctx context.Context, s *aggregate.PaymentSessi
 	return nil
 }
 
+// SaveTx persiste la sesión dentro de una transacción Postgres existente.
+// Usar cuando la sesión debe guardarse atómicamente junto a otra operación (ej: outbox).
+func (r *PaymentSessionRepo) SaveTx(ctx context.Context, tx pgx.Tx, s *aggregate.PaymentSession) error {
+	const q = `
+		INSERT INTO terminal_gateway.payment_sessions (
+			id, terminal_id, merchant_id,
+			state, channel,
+			amount_cents, currency, stan,
+			auth_code, rejection_code, rejection_reason,
+			expires_at, created_at, closed_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+		ON CONFLICT (id) DO UPDATE SET
+			state            = EXCLUDED.state,
+			auth_code        = EXCLUDED.auth_code,
+			rejection_code   = EXCLUDED.rejection_code,
+			rejection_reason = EXCLUDED.rejection_reason,
+			closed_at        = EXCLUDED.closed_at
+	`
+	_, err := tx.Exec(ctx, q,
+		s.ID().String(), s.TerminalID().String(), s.MerchantID().String(),
+		s.State().String(), s.Channel().String(),
+		s.Amount().Cents(), s.Amount().Currency().String(), s.STAN().Value(),
+		nullStr(s.AuthCode()), nullStr(s.RejectionCode()), nullStr(s.RejectionReason()),
+		s.ExpiresAt(), s.CreatedAt(), s.ClosedAt(),
+	)
+	if err != nil {
+		return fmt.Errorf("PaymentSessionRepo.SaveTx: %w", err)
+	}
+	return nil
+}
+
 func (r *PaymentSessionRepo) FindByID(ctx context.Context, id domain.TransactionID) (*aggregate.PaymentSession, error) {
 	const q = `
 		SELECT id, terminal_id, merchant_id,

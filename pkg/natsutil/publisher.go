@@ -21,6 +21,30 @@ func NewPublisher(js nats.JetStreamContext) *Publisher {
 	return &Publisher{js: js}
 }
 
+// Build serializa el payload en un DomainEvent envelope sin publicarlo.
+// Usado por el Transactional Outbox: el handler llama Build para obtener los
+// bytes y los almacena atómicamente junto al aggregate. El Relay los publica.
+func (p *Publisher) Build(
+	ctx context.Context,
+	subject string,
+	eventType string,
+	aggregateID string,
+	aggregateType string,
+	correlationID string,
+	causationID string,
+	payload any,
+) (eventID string, data []byte, err error) {
+	envelope, err := events.Wrap(eventType, aggregateID, aggregateType, correlationID, causationID, payload)
+	if err != nil {
+		return "", nil, fmt.Errorf("publisher: wrap event %q: %w", eventType, err)
+	}
+	data, err = json.Marshal(envelope)
+	if err != nil {
+		return "", nil, fmt.Errorf("publisher: marshal envelope: %w", err)
+	}
+	return envelope.EventID, data, nil
+}
+
 // Publish serializa el payload en un DomainEvent envelope y lo publica.
 // Inyecta el trace context en los headers del mensaje NATS.
 // Retorna el sequence number asignado por JetStream.

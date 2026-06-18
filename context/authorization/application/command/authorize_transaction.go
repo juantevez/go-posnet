@@ -4,7 +4,6 @@ package command
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 
@@ -180,12 +179,15 @@ func (h *AuthorizationHandler) ApplyFraudScore(ctx context.Context, cmd port.App
 		slog.String("fraud_decision", cmd.Decision),
 	)
 
-	// Idempotencia
-	already, err := h.idempotency.IsAlreadyProcessed(ctx, cmd.EventID)
-	if err != nil {
-		return fmt.Errorf("ApplyFraudScore: check idempotency: %w", err)
+	var claimed bool
+	if err := pgutil.WithReadCommitted(ctx, h.pool, func(dbTx pgx.Tx) error {
+		var e error
+		claimed, e = h.idempotency.TryMarkAsProcessed(ctx, dbTx, cmd.EventID)
+		return e
+	}); err != nil {
+		return fmt.Errorf("ApplyFraudScore: claim event: %w", err)
 	}
-	if already {
+	if !claimed {
 		log.Info("fraud score event already processed — skipping")
 		return nil
 	}
@@ -211,18 +213,20 @@ func (h *AuthorizationHandler) ApplyFraudScore(ctx context.Context, cmd port.App
 
 	// Si el fraud rechazó → publicar rechazo y terminar
 	if tx.State() == valueobject.StateRejected {
-		return h.persistAndPublishRejection(ctx, tx, cmd.EventID, log)
+		return h.persistAndPublishRejection(ctx, tx, log)
 	}
 
 	// Fraud aprobó → llamar al adquirente
-	return h.callAcquirer(ctx, tx, cmd.EventID, log)
+	return h.callAcquirer(ctx, tx, log)
 }
 
 // callAcquirer envía la transacción al host adquirente y procesa la respuesta.
+// El evento ya fue reclamado por TryMarkAsProcessed en ApplyFraudScore, por lo
+// que cualquier error del adquirente se convierte en INDETERMINATE: NATS no
+// redeliverirá y la conciliación nocturna resuelve el resultado.
 func (h *AuthorizationHandler) callAcquirer(
 	ctx context.Context,
 	tx *aggregate.Transaction,
-	eventID string,
 	log *slog.Logger,
 ) error {
 	ctx, span := observability.StartSpan(ctx, "command.callAcquirer")
@@ -230,18 +234,13 @@ func (h *AuthorizationHandler) callAcquirer(
 
 	response, err := h.acquirer.Authorize(ctx, tx)
 	if err != nil {
-		// Timeout u error de red → estado INDETERMINATE + reversal automático
-		var timeoutErr *pkgerrors.TimeoutError
-		if errors.As(err, &timeoutErr) {
-			log.Warn("acquirer timeout — marking transaction as indeterminate")
-			if markErr := tx.MarkIndeterminate(); markErr != nil {
-				return fmt.Errorf("callAcquirer: mark indeterminate: %w", markErr)
-			}
-			_ = h.repo.Save(ctx, tx)
-			// El proceso de reconciliación nocturna resuelve los INDETERMINATE.
-			return nil
+		log.Warn("acquirer error — marking transaction as indeterminate",
+			slog.String("error", err.Error()))
+		if markErr := tx.MarkIndeterminate(); markErr != nil {
+			return fmt.Errorf("callAcquirer: mark indeterminate: %w", markErr)
 		}
-		return fmt.Errorf("callAcquirer: acquirer error: %w", err)
+		_ = h.repo.Save(ctx, tx)
+		return nil
 	}
 
 	if response.IsApproved() {
@@ -262,18 +261,7 @@ func (h *AuthorizationHandler) callAcquirer(
 		}
 	}
 
-	// Persistir resultado + marcar idempotencia + publicar evento — todo atómico
-	err = pgutil.WithReadCommitted(ctx, h.pool, func(dbTx pgx.Tx) error {
-		inserted, err := h.idempotency.TryMarkAsProcessed(ctx, dbTx, eventID)
-		if err != nil {
-			return err
-		}
-		if !inserted {
-			return nil
-		}
-		return h.repo.Save(ctx, tx)
-	})
-	if err != nil {
+	if err = h.repo.Save(ctx, tx); err != nil {
 		observability.RecordError(ctx, err)
 		return fmt.Errorf("callAcquirer: persist result: %w", err)
 	}
@@ -300,23 +288,13 @@ func (h *AuthorizationHandler) callAcquirer(
 }
 
 // persistAndPublishRejection persiste el rechazo y publica el evento.
+// El evento ya fue reclamado por TryMarkAsProcessed en ApplyFraudScore.
 func (h *AuthorizationHandler) persistAndPublishRejection(
 	ctx context.Context,
 	tx *aggregate.Transaction,
-	eventID string,
 	log *slog.Logger,
 ) error {
-	err := pgutil.WithReadCommitted(ctx, h.pool, func(dbTx pgx.Tx) error {
-		inserted, err := h.idempotency.TryMarkAsProcessed(ctx, dbTx, eventID)
-		if err != nil {
-			return err
-		}
-		if !inserted {
-			return nil
-		}
-		return h.repo.Save(ctx, tx)
-	})
-	if err != nil {
+	if err := h.repo.Save(ctx, tx); err != nil {
 		return fmt.Errorf("persistAndPublishRejection: %w", err)
 	}
 	if err := h.publisher.PublishRejected(ctx, tx); err != nil {
@@ -335,11 +313,15 @@ func (h *AuthorizationHandler) ProcessReversal(ctx context.Context, cmd port.Pro
 		slog.String("event_id", cmd.EventID),
 	)
 
-	already, err := h.idempotency.IsAlreadyProcessed(ctx, cmd.EventID)
-	if err != nil {
-		return fmt.Errorf("ProcessReversal: check idempotency: %w", err)
+	var claimed bool
+	if err := pgutil.WithReadCommitted(ctx, h.pool, func(dbTx pgx.Tx) error {
+		var e error
+		claimed, e = h.idempotency.TryMarkAsProcessed(ctx, dbTx, cmd.EventID)
+		return e
+	}); err != nil {
+		return fmt.Errorf("ProcessReversal: claim event: %w", err)
 	}
-	if already {
+	if !claimed {
 		log.Info("reversal event already processed — skipping")
 		return nil
 	}
@@ -356,26 +338,18 @@ func (h *AuthorizationHandler) ProcessReversal(ctx context.Context, cmd port.Pro
 
 	// Enviar reversal al adquirente
 	if err := h.acquirer.Reverse(ctx, tx); err != nil {
-		log.Error("acquirer reversal failed", slog.String("error", err.Error()))
-		// El reversal falla → queda para conciliación manual
-		return fmt.Errorf("ProcessReversal: acquirer reverse: %w", err)
+		// El evento ya fue reclamado — NATS no va a redeliveriar.
+		// Loguear y dejar para conciliación manual.
+		log.Error("acquirer reversal failed — leaving for reconciliation",
+			slog.String("error", err.Error()))
+		return nil
 	}
 
 	if err := tx.Reverse(); err != nil {
 		return fmt.Errorf("ProcessReversal: reverse aggregate: %w", err)
 	}
 
-	err = pgutil.WithReadCommitted(ctx, h.pool, func(dbTx pgx.Tx) error {
-		inserted, err := h.idempotency.TryMarkAsProcessed(ctx, dbTx, cmd.EventID)
-		if err != nil {
-			return err
-		}
-		if !inserted {
-			return nil
-		}
-		return h.repo.Save(ctx, tx)
-	})
-	if err != nil {
+	if err := h.repo.Save(ctx, tx); err != nil {
 		return fmt.Errorf("ProcessReversal: persist: %w", err)
 	}
 

@@ -29,7 +29,49 @@ func (p *EventPublisher) PublishTransactionReceived(
 	iso8583Raw []byte,
 	emvDataBase64 string,
 ) error {
-	payload := events.TransactionReceivedPayload{
+	_, err := p.pub.Publish(ctx,
+		events.SubjectTransactionReceived,
+		events.SubjectTransactionReceived,
+		session.ID().String(),
+		"PaymentSession",
+		session.ID().String(),
+		"",
+		p.buildTransactionReceivedPayload(session, iso8583Raw, emvDataBase64),
+	)
+	if err != nil {
+		return fmt.Errorf("tg publisher: publish TransactionReceived: %w", err)
+	}
+	return nil
+}
+
+// BuildTransactionReceived serializa el evento sin publicarlo — para el Transactional Outbox.
+func (p *EventPublisher) BuildTransactionReceived(
+	ctx context.Context,
+	session *aggregate.PaymentSession,
+	iso8583Raw []byte,
+	emvDataBase64 string,
+) (subject, eventID string, payload []byte, err error) {
+	eventID, payload, err = p.pub.Build(ctx,
+		events.SubjectTransactionReceived,
+		events.SubjectTransactionReceived,
+		session.ID().String(),
+		"PaymentSession",
+		session.ID().String(),
+		"",
+		p.buildTransactionReceivedPayload(session, iso8583Raw, emvDataBase64),
+	)
+	if err != nil {
+		return "", "", nil, fmt.Errorf("tg publisher: build TransactionReceived: %w", err)
+	}
+	return events.SubjectTransactionReceived, eventID, payload, nil
+}
+
+func (p *EventPublisher) buildTransactionReceivedPayload(
+	session *aggregate.PaymentSession,
+	iso8583Raw []byte,
+	emvDataBase64 string,
+) events.TransactionReceivedPayload {
+	return events.TransactionReceivedPayload{
 		TransactionID: session.ID().String(),
 		TerminalID:    session.TerminalID().String(),
 		MerchantID:    session.MerchantID().String(),
@@ -43,20 +85,6 @@ func (p *EventPublisher) PublishTransactionReceived(
 		ISO8583Raw:    iso8583Raw,
 		ReceivedAt:    time.Now().UTC().Format(time.RFC3339),
 	}
-
-	_, err := p.pub.Publish(ctx,
-		events.SubjectTransactionReceived,
-		events.SubjectTransactionReceived,
-		session.ID().String(),
-		"PaymentSession",
-		session.ID().String(),
-		"",
-		payload,
-	)
-	if err != nil {
-		return fmt.Errorf("tg publisher: publish TransactionReceived: %w", err)
-	}
-	return nil
 }
 
 // PublishReversalRequested publica al stream POSNET_TRANSACTIONS.
