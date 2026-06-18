@@ -65,6 +65,24 @@ CREATE TABLE IF NOT EXISTS terminal_gateway.processed_events (
     event_id     UUID        PRIMARY KEY,
     processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE TABLE IF NOT EXISTS terminal_gateway.outbox (
+    id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    subject    TEXT        NOT NULL,
+    event_id   TEXT        NOT NULL,
+    payload    BYTEA       NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_tg_outbox_created_at ON terminal_gateway.outbox(created_at);
+
+-- Terminal seed para desarrollo/testing (mismo UUID que usa el simulador QR)
+INSERT INTO terminal_gateway.terminals (id, merchant_id, terminal_code, certificate_cn, status)
+VALUES (
+    'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+    'b2c3d4e5-f6a7-8901-bcde-f12345678901',
+    'TRM-0001',
+    'terminal-0001.posnet.local',
+    'ACTIVE'
+) ON CONFLICT (id) DO NOTHING;
 
 -- fraud_detection
 CREATE TABLE IF NOT EXISTS fraud_detection.fraud_cases (
