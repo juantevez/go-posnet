@@ -20,10 +20,11 @@ import (
 // Uso típico en un handler:
 //
 //	err := pgutil.WithReadCommitted(ctx, pool, func(tx pgx.Tx) error {
-//	    if err := repo.Save(ctx, tx, transaction); err != nil {
-//	        return err
+//	    inserted, err := idempotency.TryMarkAsProcessed(ctx, tx, event.EventID)
+//	    if err != nil || !inserted {
+//	        return err // nil si duplicado, error si falla el INSERT
 //	    }
-//	    return idempotency.MarkAsProcessed(ctx, tx, event.EventID)
+//	    return repo.Save(ctx, tx, transaction)
 //	})
 func WithTransaction(
 	ctx context.Context,

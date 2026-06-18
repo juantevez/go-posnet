@@ -61,16 +61,6 @@ func (h *NotifyHandler) NotifyApproval(ctx context.Context, cmd port.NotifyAppro
 		slog.String("event_id", cmd.EventID),
 	)
 
-	// Idempotencia
-	already, err := h.idempotency.IsAlreadyProcessed(ctx, cmd.EventID)
-	if err != nil {
-		return fmt.Errorf("NotifyApproval: check idempotency: %w", err)
-	}
-	if already {
-		log.Info("notification event already processed — skipping")
-		return nil
-	}
-
 	txID, err := domain.ParseTransactionID(cmd.TransactionID)
 	if err != nil {
 		return pkgerrors.NewValidationError("invalid transaction_id")
@@ -104,29 +94,37 @@ func (h *NotifyHandler) NotifyApproval(ctx context.Context, cmd port.NotifyAppro
 	}
 
 	// Persistir ambas + idempotencia (atómico)
+	var dispatched bool
 	err = pgutil.WithReadCommitted(ctx, h.pool, func(tx pgx.Tx) error {
+		inserted, err := h.idempotency.TryMarkAsProcessed(ctx, tx, cmd.EventID)
+		if err != nil {
+			return err
+		}
+		if !inserted {
+			log.Info("notification event already processed — skipping")
+			return nil
+		}
 		if err := h.notifRepo.Save(ctx, terminalNotif); err != nil {
 			return err
 		}
 		if err := h.notifRepo.Save(ctx, webhookNotif); err != nil {
 			return err
 		}
-		return h.idempotency.MarkAsProcessed(ctx, tx, cmd.EventID)
+		dispatched = true
+		return nil
 	})
 	if err != nil {
 		return fmt.Errorf("NotifyApproval: persist: %w", err)
 	}
 
-	// Despachar al terminal (best-effort — no bloquea si falla)
-	go h.dispatch(context.Background(), terminalNotif)
-
-	// Despachar webhook (best-effort)
-	go h.dispatch(context.Background(), webhookNotif)
-
-	log.Info("notifications created and dispatching",
-		slog.String("terminal_notif_id", terminalNotif.ID()),
-		slog.String("webhook_notif_id", webhookNotif.ID()),
-	)
+	if dispatched {
+		go h.dispatch(context.Background(), terminalNotif)
+		go h.dispatch(context.Background(), webhookNotif)
+		log.Info("notifications created and dispatching",
+			slog.String("terminal_notif_id", terminalNotif.ID()),
+			slog.String("webhook_notif_id", webhookNotif.ID()),
+		)
+	}
 	return nil
 }
 
@@ -134,14 +132,6 @@ func (h *NotifyHandler) NotifyApproval(ctx context.Context, cmd port.NotifyAppro
 func (h *NotifyHandler) NotifyRejection(ctx context.Context, cmd port.NotifyRejectionCommand) error {
 	ctx, span := observability.StartSpan(ctx, "command.NotifyRejection")
 	defer span.End()
-
-	already, err := h.idempotency.IsAlreadyProcessed(ctx, cmd.EventID)
-	if err != nil {
-		return fmt.Errorf("NotifyRejection: check idempotency: %w", err)
-	}
-	if already {
-		return nil
-	}
 
 	txID, err := domain.ParseTransactionID(cmd.TransactionID)
 	if err != nil {
@@ -169,17 +159,25 @@ func (h *NotifyHandler) NotifyRejection(ctx context.Context, cmd port.NotifyReje
 		return fmt.Errorf("NotifyRejection: create notification: %w", err)
 	}
 
+	var dispatched bool
 	err = pgutil.WithReadCommitted(ctx, h.pool, func(tx pgx.Tx) error {
-		if err := h.notifRepo.Save(ctx, terminalNotif); err != nil {
+		inserted, err := h.idempotency.TryMarkAsProcessed(ctx, tx, cmd.EventID)
+		if err != nil {
 			return err
 		}
-		return h.idempotency.MarkAsProcessed(ctx, tx, cmd.EventID)
+		if !inserted {
+			return nil
+		}
+		dispatched = true
+		return h.notifRepo.Save(ctx, terminalNotif)
 	})
 	if err != nil {
 		return fmt.Errorf("NotifyRejection: persist: %w", err)
 	}
 
-	go h.dispatch(context.Background(), terminalNotif)
+	if dispatched {
+		go h.dispatch(context.Background(), terminalNotif)
+	}
 	return nil
 }
 
@@ -187,14 +185,6 @@ func (h *NotifyHandler) NotifyRejection(ctx context.Context, cmd port.NotifyReje
 func (h *NotifyHandler) NotifyBatchClosed(ctx context.Context, cmd port.NotifyBatchClosedCommand) error {
 	ctx, span := observability.StartSpan(ctx, "command.NotifyBatchClosed")
 	defer span.End()
-
-	already, err := h.idempotency.IsAlreadyProcessed(ctx, cmd.EventID)
-	if err != nil {
-		return fmt.Errorf("NotifyBatchClosed: check idempotency: %w", err)
-	}
-	if already {
-		return nil
-	}
 
 	// Para cierres de lote solo notificamos al comercio vía Webhook
 	merchantID, err := domain.ParseMerchantID(cmd.MerchantID)
@@ -219,17 +209,25 @@ func (h *NotifyHandler) NotifyBatchClosed(ctx context.Context, cmd port.NotifyBa
 		return fmt.Errorf("NotifyBatchClosed: create notification: %w", err)
 	}
 
+	var dispatched bool
 	err = pgutil.WithReadCommitted(ctx, h.pool, func(tx pgx.Tx) error {
-		if err := h.notifRepo.Save(ctx, webhookNotif); err != nil {
+		inserted, err := h.idempotency.TryMarkAsProcessed(ctx, tx, cmd.EventID)
+		if err != nil {
 			return err
 		}
-		return h.idempotency.MarkAsProcessed(ctx, tx, cmd.EventID)
+		if !inserted {
+			return nil
+		}
+		dispatched = true
+		return h.notifRepo.Save(ctx, webhookNotif)
 	})
 	if err != nil {
 		return fmt.Errorf("NotifyBatchClosed: persist: %w", err)
 	}
 
-	go h.dispatch(context.Background(), webhookNotif)
+	if dispatched {
+		go h.dispatch(context.Background(), webhookNotif)
+	}
 	return nil
 }
 

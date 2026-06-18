@@ -7,7 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"time"
+
+	//"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,9 +24,9 @@ import (
 	"github.com/juantevez/go-posnet/pkg/pgutil"
 )
 
-const (
+/*const (
 	fraudCheckTimeout = 500 * time.Millisecond // Timeout para esperar el score de fraude
-)
+)*/
 
 // AuthorizationHandler implementa port.AuthorizationService.
 // Orquesta la Saga de autorización completa.
@@ -74,17 +75,7 @@ func (h *AuthorizationHandler) AuthorizeTransaction(ctx context.Context, cmd por
 		slog.String("event_id", cmd.EventID),
 	)
 
-	// ── Paso 1: Idempotencia ─────────────────────────────────────────────────
-	already, err := h.idempotency.IsAlreadyProcessed(ctx, cmd.EventID)
-	if err != nil {
-		return fmt.Errorf("AuthorizeTransaction: check idempotency: %w", err)
-	}
-	if already {
-		log.Info("event already processed — skipping")
-		return nil
-	}
-
-	// ── Paso 2: Parsear y validar los Value Objects ───────────────────────────
+	// ── Paso 1: Parsear y validar los Value Objects ──────────────────────────
 	txID, err := domain.ParseTransactionID(cmd.TransactionID)
 	if err != nil {
 		return pkgerrors.NewValidationError("invalid transaction_id: " + err.Error())
@@ -137,15 +128,28 @@ func (h *AuthorizationHandler) AuthorizeTransaction(ctx context.Context, cmd por
 	}
 
 	// ── Paso 4: Persistir + marcar idempotencia en una sola transacción ──────
+	var published bool
 	err = pgutil.WithReadCommitted(ctx, h.pool, func(dbTx pgx.Tx) error {
+		inserted, err := h.idempotency.TryMarkAsProcessed(ctx, dbTx, cmd.EventID)
+		if err != nil {
+			return err
+		}
+		if !inserted {
+			log.Info("event already processed — skipping")
+			return nil
+		}
 		if err := h.repo.Save(ctx, tx); err != nil {
 			return fmt.Errorf("save transaction: %w", err)
 		}
-		return h.idempotency.MarkAsProcessed(ctx, dbTx, cmd.EventID)
+		published = true
+		return nil
 	})
 	if err != nil {
 		observability.RecordError(ctx, err)
 		return fmt.Errorf("AuthorizeTransaction: persist: %w", err)
+	}
+	if !published {
+		return nil
 	}
 
 	// ── Paso 5: Publicar FraudCheckRequested ─────────────────────────────────
@@ -260,10 +264,14 @@ func (h *AuthorizationHandler) callAcquirer(
 
 	// Persistir resultado + marcar idempotencia + publicar evento — todo atómico
 	err = pgutil.WithReadCommitted(ctx, h.pool, func(dbTx pgx.Tx) error {
-		if err := h.repo.Save(ctx, tx); err != nil {
+		inserted, err := h.idempotency.TryMarkAsProcessed(ctx, dbTx, eventID)
+		if err != nil {
 			return err
 		}
-		return h.idempotency.MarkAsProcessed(ctx, dbTx, eventID)
+		if !inserted {
+			return nil
+		}
+		return h.repo.Save(ctx, tx)
 	})
 	if err != nil {
 		observability.RecordError(ctx, err)
@@ -299,10 +307,14 @@ func (h *AuthorizationHandler) persistAndPublishRejection(
 	log *slog.Logger,
 ) error {
 	err := pgutil.WithReadCommitted(ctx, h.pool, func(dbTx pgx.Tx) error {
-		if err := h.repo.Save(ctx, tx); err != nil {
+		inserted, err := h.idempotency.TryMarkAsProcessed(ctx, dbTx, eventID)
+		if err != nil {
 			return err
 		}
-		return h.idempotency.MarkAsProcessed(ctx, dbTx, eventID)
+		if !inserted {
+			return nil
+		}
+		return h.repo.Save(ctx, tx)
 	})
 	if err != nil {
 		return fmt.Errorf("persistAndPublishRejection: %w", err)
@@ -354,10 +366,14 @@ func (h *AuthorizationHandler) ProcessReversal(ctx context.Context, cmd port.Pro
 	}
 
 	err = pgutil.WithReadCommitted(ctx, h.pool, func(dbTx pgx.Tx) error {
-		if err := h.repo.Save(ctx, tx); err != nil {
+		inserted, err := h.idempotency.TryMarkAsProcessed(ctx, dbTx, cmd.EventID)
+		if err != nil {
 			return err
 		}
-		return h.idempotency.MarkAsProcessed(ctx, dbTx, cmd.EventID)
+		if !inserted {
+			return nil
+		}
+		return h.repo.Save(ctx, tx)
 	})
 	if err != nil {
 		return fmt.Errorf("ProcessReversal: persist: %w", err)
@@ -370,4 +386,3 @@ func (h *AuthorizationHandler) ProcessReversal(ctx context.Context, cmd port.Pro
 	log.Info("reversal completed successfully")
 	return nil
 }
-

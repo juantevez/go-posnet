@@ -116,7 +116,8 @@ func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 }
 
 // start arranca todos los servidores en goroutines independientes.
-func (a *app) start(ctx context.Context) error {
+// func (a *app) start(ctx context.Context) error {
+func (a *app) start(_ context.Context) error {
 	if err := a.subscriber.Subscribe(); err != nil {
 		return fmt.Errorf("start: subscribe NATS consumers: %w", err)
 	}

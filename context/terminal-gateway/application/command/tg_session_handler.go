@@ -169,15 +169,6 @@ func (h *SessionHandler) ApplyApproval(ctx context.Context, cmd port.ApplyApprov
 	ctx, span := observability.StartSpan(ctx, "command.ApplyApproval")
 	defer span.End()
 
-	// Idempotencia
-	already, err := h.idempotency.IsAlreadyProcessed(ctx, cmd.EventID)
-	if err != nil {
-		return fmt.Errorf("ApplyApproval: check idempotency: %w", err)
-	}
-	if already {
-		return nil
-	}
-
 	txID, err := domain.ParseTransactionID(cmd.TransactionID)
 	if err != nil {
 		return pkgerrors.NewValidationError("invalid transaction_id")
@@ -192,22 +183,29 @@ func (h *SessionHandler) ApplyApproval(ctx context.Context, cmd port.ApplyApprov
 		return fmt.Errorf("ApplyApproval: approve session: %w", err)
 	}
 
+	processed := false
 	err = pgutil.WithReadCommitted(ctx, h.pool, func(tx pgx.Tx) error {
-		if err := h.sessionRepo.Save(ctx, session); err != nil {
+		inserted, err := h.idempotency.TryMarkAsProcessed(ctx, tx, cmd.EventID)
+		if err != nil {
 			return err
 		}
-		return h.idempotency.MarkAsProcessed(ctx, tx, cmd.EventID)
+		if !inserted {
+			return nil
+		}
+		processed = true
+		return h.sessionRepo.Save(ctx, session)
 	})
 	if err != nil {
 		return fmt.Errorf("ApplyApproval: persist: %w", err)
 	}
 
-	// Notificar al terminal vía WebSocket
-	if err := h.notifier.NotifyResult(ctx, session); err != nil {
-		observability.FromContext(ctx).Error("failed to notify terminal of approval",
-			slog.String("transaction_id", cmd.TransactionID),
-			slog.String("error", err.Error()),
-		)
+	if processed {
+		if err := h.notifier.NotifyResult(ctx, session); err != nil {
+			observability.FromContext(ctx).Error("failed to notify terminal of approval",
+				slog.String("transaction_id", cmd.TransactionID),
+				slog.String("error", err.Error()),
+			)
+		}
 	}
 
 	return nil
@@ -217,14 +215,6 @@ func (h *SessionHandler) ApplyApproval(ctx context.Context, cmd port.ApplyApprov
 func (h *SessionHandler) ApplyRejection(ctx context.Context, cmd port.ApplyRejectionCommand) error {
 	ctx, span := observability.StartSpan(ctx, "command.ApplyRejection")
 	defer span.End()
-
-	already, err := h.idempotency.IsAlreadyProcessed(ctx, cmd.EventID)
-	if err != nil {
-		return fmt.Errorf("ApplyRejection: check idempotency: %w", err)
-	}
-	if already {
-		return nil
-	}
 
 	txID, err := domain.ParseTransactionID(cmd.TransactionID)
 	if err != nil {
@@ -240,21 +230,29 @@ func (h *SessionHandler) ApplyRejection(ctx context.Context, cmd port.ApplyRejec
 		return fmt.Errorf("ApplyRejection: reject session: %w", err)
 	}
 
+	processed := false
 	err = pgutil.WithReadCommitted(ctx, h.pool, func(tx pgx.Tx) error {
-		if err := h.sessionRepo.Save(ctx, session); err != nil {
+		inserted, err := h.idempotency.TryMarkAsProcessed(ctx, tx, cmd.EventID)
+		if err != nil {
 			return err
 		}
-		return h.idempotency.MarkAsProcessed(ctx, tx, cmd.EventID)
+		if !inserted {
+			return nil
+		}
+		processed = true
+		return h.sessionRepo.Save(ctx, session)
 	})
 	if err != nil {
 		return fmt.Errorf("ApplyRejection: persist: %w", err)
 	}
 
-	if err := h.notifier.NotifyResult(ctx, session); err != nil {
-		observability.FromContext(ctx).Error("failed to notify terminal of rejection",
-			slog.String("transaction_id", cmd.TransactionID),
-			slog.String("error", err.Error()),
-		)
+	if processed {
+		if err := h.notifier.NotifyResult(ctx, session); err != nil {
+			observability.FromContext(ctx).Error("failed to notify terminal of rejection",
+				slog.String("transaction_id", cmd.TransactionID),
+				slog.String("error", err.Error()),
+			)
+		}
 	}
 
 	return nil

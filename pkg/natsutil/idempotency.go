@@ -36,17 +36,18 @@ func (s *IdempotencyStore) IsAlreadyProcessed(ctx context.Context, eventID strin
 	return true, nil // Existe → ya procesado
 }
 
-// MarkAsProcessed registra el eventID como procesado.
-// DEBE llamarse dentro de la misma transacción del handler para garantizar atomicidad.
-// Si la transacción de negocio hace rollback, este registro también se revierte.
-func (s *IdempotencyStore) MarkAsProcessed(ctx context.Context, tx pgx.Tx, eventID string) error {
+// TryMarkAsProcessed intenta registrar el eventID como procesado dentro de tx.
+// Retorna true si el evento fue insertado (es nuevo), false si ya existía (duplicado).
+// DEBE llamarse al inicio del callback de WithReadCommitted: si la transacción hace
+// rollback, el registro también se revierte, preservando la atomicidad.
+func (s *IdempotencyStore) TryMarkAsProcessed(ctx context.Context, tx pgx.Tx, eventID string) (bool, error) {
 	query := fmt.Sprintf(
 		`INSERT INTO %s.processed_events (event_id) VALUES ($1) ON CONFLICT DO NOTHING`,
 		s.schema,
 	)
-	_, err := tx.Exec(ctx, query, eventID)
+	res, err := tx.Exec(ctx, query, eventID)
 	if err != nil {
-		return fmt.Errorf("idempotency: mark event_id %q as processed: %w", eventID, err)
+		return false, fmt.Errorf("idempotency: mark event_id %q: %w", eventID, err)
 	}
-	return nil
+	return res.RowsAffected() > 0, nil
 }

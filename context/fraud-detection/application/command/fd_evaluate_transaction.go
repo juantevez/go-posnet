@@ -69,17 +69,7 @@ func (h *EvaluateTransactionHandler) EvaluateTransaction(
 		slog.String("event_id", cmd.EventID),
 	)
 
-	// ── 1. Idempotencia ───────────────────────────────────────────────────────
-	already, err := h.idempotency.IsAlreadyProcessed(ctx, cmd.EventID)
-	if err != nil {
-		return fmt.Errorf("EvaluateTransaction: check idempotency: %w", err)
-	}
-	if already {
-		log.Info("fraud check event already processed — skipping")
-		return nil
-	}
-
-	// ── 2. Parsear Value Objects ──────────────────────────────────────────────
+	// ── 1. Parsear Value Objects ─────────────────────────────────────────────
 	txID, err := domain.ParseTransactionID(cmd.TransactionID)
 	if err != nil {
 		return pkgerrors.NewValidationError("invalid transaction_id: " + err.Error())
@@ -97,7 +87,7 @@ func (h *EvaluateTransactionHandler) EvaluateTransaction(
 		occurredAt = time.Now().UTC() // fallback seguro
 	}
 
-	// ── 3. Crear el FraudCase ─────────────────────────────────────────────────
+	// ── 2. Crear el FraudCase ─────────────────────────────────────────────────
 	fc, err := aggregate.NewFraudCase(
 		txID, terminalID, merchantID,
 		cmd.AmountCents, cmd.Currency,
@@ -108,7 +98,7 @@ func (h *EvaluateTransactionHandler) EvaluateTransaction(
 		return pkgerrors.NewValidationError(err.Error())
 	}
 
-	// ── 4. Ejecutar el motor de reglas ────────────────────────────────────────
+	// ── 3. Ejecutar el motor de reglas ───────────────────────────────────────
 	if err := h.engine.Evaluate(ctx, fc); err != nil {
 		// Si el motor falla completamente, publicar un score neutral (REVIEW)
 		// para no bloquear la transacción por un problema de infraestructura.
@@ -129,19 +119,24 @@ func (h *EvaluateTransactionHandler) EvaluateTransaction(
 		slog.Any("rules_hit", fc.Score().RulesHit()),
 	)
 
-	// ── 5. Persistir + marcar idempotencia (atómico) ──────────────────────────
+	// ── 4. Persistir + marcar idempotencia (atómico) ─────────────────────────
 	err = pgutil.WithReadCommitted(ctx, h.pool, func(tx pgx.Tx) error {
-		if err := h.fraudCaseRepo.Save(ctx, fc); err != nil {
-			return fmt.Errorf("save fraud case: %w", err)
+		inserted, err := h.idempotency.TryMarkAsProcessed(ctx, tx, cmd.EventID)
+		if err != nil {
+			return err
 		}
-		return h.idempotency.MarkAsProcessed(ctx, tx, cmd.EventID)
+		if !inserted {
+			log.Info("fraud check event already processed — skipping")
+			return nil
+		}
+		return h.fraudCaseRepo.Save(ctx, fc)
 	})
 	if err != nil {
 		observability.RecordError(ctx, err)
 		return fmt.Errorf("EvaluateTransaction: persist: %w", err)
 	}
 
-	// ── 6. Publicar FraudScoreCalculated a NATS ───────────────────────────────
+	// ── 5. Publicar FraudScoreCalculated a NATS ──────────────────────────────
 	if err := h.publisher.PublishFraudScoreCalculated(ctx, fc); err != nil {
 		// Loguear pero no fallar — el FraudCase ya está en Postgres.
 		// Authorization tiene un mecanismo de bypass por timeout (500ms).

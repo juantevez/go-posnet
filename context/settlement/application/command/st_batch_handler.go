@@ -60,16 +60,6 @@ func (h *BatchHandler) RegisterApproval(ctx context.Context, cmd port.RegisterAp
 		slog.String("event_id", cmd.EventID),
 	)
 
-	// Idempotencia
-	already, err := h.idempotency.IsAlreadyProcessed(ctx, cmd.EventID)
-	if err != nil {
-		return fmt.Errorf("RegisterApproval: check idempotency: %w", err)
-	}
-	if already {
-		log.Info("approval event already registered — skipping")
-		return nil
-	}
-
 	// Parsear Value Objects
 	terminalID, err := domain.ParseTerminalID(cmd.TerminalID)
 	if err != nil {
@@ -88,33 +78,38 @@ func (h *BatchHandler) RegisterApproval(ctx context.Context, cmd port.RegisterAp
 		authorizedAt = time.Now().UTC()
 	}
 
-	// Obtener o crear el batch OPEN del terminal para ese día
-	batch, err := h.batchRepo.FindOrCreateOpen(ctx, terminalID, merchantID, authorizedAt, cmd.Currency)
-	if err != nil {
-		return fmt.Errorf("RegisterApproval: find or create batch: %w", err)
-	}
-
-	// Agregar la transacción al batch
-	if err := batch.AddTransaction(txID, cmd.AmountCents, valueobject.BatchTxPurchase); err != nil {
-		return fmt.Errorf("RegisterApproval: add transaction: %w", err)
-	}
-
-	// Persistir + marcar idempotencia (atómico)
+	var batchID string
 	err = pgutil.WithReadCommitted(ctx, h.pool, func(tx pgx.Tx) error {
-		if err := h.batchRepo.Save(ctx, batch); err != nil {
+		inserted, err := h.idempotency.TryMarkAsProcessed(ctx, tx, cmd.EventID)
+		if err != nil {
 			return err
 		}
-		return h.idempotency.MarkAsProcessed(ctx, tx, cmd.EventID)
+		if !inserted {
+			log.Info("approval event already registered — skipping")
+			return nil
+		}
+
+		batch, err := h.batchRepo.FindOrCreateOpen(ctx, terminalID, merchantID, authorizedAt, cmd.Currency)
+		if err != nil {
+			return fmt.Errorf("find or create batch: %w", err)
+		}
+		if err := batch.AddTransaction(txID, cmd.AmountCents, valueobject.BatchTxPurchase); err != nil {
+			return fmt.Errorf("add transaction: %w", err)
+		}
+		batchID = batch.ID()
+		return h.batchRepo.Save(ctx, batch)
 	})
 	if err != nil {
 		observability.RecordError(ctx, err)
-		return fmt.Errorf("RegisterApproval: persist: %w", err)
+		return fmt.Errorf("RegisterApproval: %w", err)
 	}
 
-	log.Info("transaction registered in batch",
-		slog.String("batch_id", batch.ID()),
-		slog.Int64("amount_cents", cmd.AmountCents),
-	)
+	if batchID != "" {
+		log.Info("transaction registered in batch",
+			slog.String("batch_id", batchID),
+			slog.Int64("amount_cents", cmd.AmountCents),
+		)
+	}
 	return nil
 }
 
@@ -122,14 +117,6 @@ func (h *BatchHandler) RegisterApproval(ctx context.Context, cmd port.RegisterAp
 func (h *BatchHandler) RegisterReversal(ctx context.Context, cmd port.RegisterReversalCommand) error {
 	ctx, span := observability.StartSpan(ctx, "command.RegisterReversal")
 	defer span.End()
-
-	already, err := h.idempotency.IsAlreadyProcessed(ctx, cmd.EventID)
-	if err != nil {
-		return fmt.Errorf("RegisterReversal: check idempotency: %w", err)
-	}
-	if already {
-		return nil
-	}
 
 	terminalID, err := domain.ParseTerminalID(cmd.TerminalID)
 	if err != nil {
@@ -148,20 +135,23 @@ func (h *BatchHandler) RegisterReversal(ctx context.Context, cmd port.RegisterRe
 		completedAt = time.Now().UTC()
 	}
 
-	batch, err := h.batchRepo.FindOrCreateOpen(ctx, terminalID, merchantID, completedAt, cmd.Currency)
-	if err != nil {
-		return fmt.Errorf("RegisterReversal: find or create batch: %w", err)
-	}
-
-	if err := batch.RemoveTransaction(origTxID); err != nil {
-		return fmt.Errorf("RegisterReversal: remove transaction: %w", err)
-	}
-
 	return pgutil.WithReadCommitted(ctx, h.pool, func(tx pgx.Tx) error {
-		if err := h.batchRepo.Save(ctx, batch); err != nil {
+		inserted, err := h.idempotency.TryMarkAsProcessed(ctx, tx, cmd.EventID)
+		if err != nil {
 			return err
 		}
-		return h.idempotency.MarkAsProcessed(ctx, tx, cmd.EventID)
+		if !inserted {
+			return nil
+		}
+
+		batch, err := h.batchRepo.FindOrCreateOpen(ctx, terminalID, merchantID, completedAt, cmd.Currency)
+		if err != nil {
+			return fmt.Errorf("find or create batch: %w", err)
+		}
+		if err := batch.RemoveTransaction(origTxID); err != nil {
+			return fmt.Errorf("remove transaction: %w", err)
+		}
+		return h.batchRepo.Save(ctx, batch)
 	})
 }
 
@@ -175,15 +165,6 @@ func (h *BatchHandler) ProcessBatchClose(ctx context.Context, cmd port.ProcessBa
 		slog.String("batch_date", cmd.BatchDate),
 		slog.String("event_id", cmd.EventID),
 	)
-
-	already, err := h.idempotency.IsAlreadyProcessed(ctx, cmd.EventID)
-	if err != nil {
-		return fmt.Errorf("ProcessBatchClose: check idempotency: %w", err)
-	}
-	if already {
-		log.Info("batch close event already processed — skipping")
-		return nil
-	}
 
 	terminalID, err := domain.ParseTerminalID(cmd.TerminalID)
 	if err != nil {
@@ -213,15 +194,24 @@ func (h *BatchHandler) ProcessBatchClose(ctx context.Context, cmd port.ProcessBa
 		return fmt.Errorf("ProcessBatchClose: close batch: %w", err)
 	}
 
-	// Persistir + idempotencia
+	processed := false
 	err = pgutil.WithReadCommitted(ctx, h.pool, func(tx pgx.Tx) error {
-		if err := h.batchRepo.Save(ctx, batch); err != nil {
+		inserted, err := h.idempotency.TryMarkAsProcessed(ctx, tx, cmd.EventID)
+		if err != nil {
 			return err
 		}
-		return h.idempotency.MarkAsProcessed(ctx, tx, cmd.EventID)
+		if !inserted {
+			log.Info("batch close event already processed — skipping")
+			return nil
+		}
+		processed = true
+		return h.batchRepo.Save(ctx, batch)
 	})
 	if err != nil {
-		return fmt.Errorf("ProcessBatchClose: persist: %w", err)
+		return fmt.Errorf("ProcessBatchClose: %w", err)
+	}
+	if !processed {
+		return nil
 	}
 
 	// Publicar BatchClosed a NATS → Notification BC
