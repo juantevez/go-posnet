@@ -32,7 +32,10 @@ type EventPublisher interface {
 	// BuildTransactionReceived serializa el evento TransactionReceived sin publicarlo.
 	// Retorna el subject, el event_id (para Nats-Msg-Id) y el payload JSON del envelope.
 	// Usado por ProcessPayment para escribir en el outbox atómicamente con el Save.
-	BuildTransactionReceived(ctx context.Context, session *aggregate.PaymentSession, iso8583Raw []byte, emvDataBase64 string) (subject, eventID string, payload []byte, err error)
+	//
+	// cardLast4 y cardNetwork se reciben del ProcessPaymentCommand: en el flujo QR
+	// vienen del payload del cliente; en ISO 8583 real los parsearía el adaptador.
+	BuildTransactionReceived(ctx context.Context, session *aggregate.PaymentSession, iso8583Raw []byte, emvDataBase64 string, cardLast4, cardNetwork string) (subject, eventID string, payload []byte, err error)
 
 	// PublishReversalRequested publica la solicitud de anulación.
 	// Consumido por: Authorization BC.

@@ -36,7 +36,7 @@ func (p *EventPublisher) PublishTransactionReceived(
 		"PaymentSession",
 		session.ID().String(),
 		"",
-		p.buildTransactionReceivedPayload(session, iso8583Raw, emvDataBase64),
+		p.buildTransactionReceivedPayload(session, iso8583Raw, emvDataBase64, "", ""),
 	)
 	if err != nil {
 		return fmt.Errorf("tg publisher: publish TransactionReceived: %w", err)
@@ -45,11 +45,16 @@ func (p *EventPublisher) PublishTransactionReceived(
 }
 
 // BuildTransactionReceived serializa el evento sin publicarlo — para el Transactional Outbox.
+// cardLast4 y cardNetwork vienen del ProcessPaymentCommand (capturados en el handler HTTP/QR).
+// En un flujo ISO 8583 real estos campos se parsearían del mensaje raw; en el simulador QR
+// se reciben directamente del payload del cliente.
 func (p *EventPublisher) BuildTransactionReceived(
 	ctx context.Context,
 	session *aggregate.PaymentSession,
 	iso8583Raw []byte,
 	emvDataBase64 string,
+	cardLast4 string,
+	cardNetwork string,
 ) (subject, eventID string, payload []byte, err error) {
 	eventID, payload, err = p.pub.Build(ctx,
 		events.SubjectTransactionReceived,
@@ -58,7 +63,7 @@ func (p *EventPublisher) BuildTransactionReceived(
 		"PaymentSession",
 		session.ID().String(),
 		"",
-		p.buildTransactionReceivedPayload(session, iso8583Raw, emvDataBase64),
+		p.buildTransactionReceivedPayload(session, iso8583Raw, emvDataBase64, cardLast4, cardNetwork),
 	)
 	if err != nil {
 		return "", "", nil, fmt.Errorf("tg publisher: build TransactionReceived: %w", err)
@@ -70,6 +75,8 @@ func (p *EventPublisher) buildTransactionReceivedPayload(
 	session *aggregate.PaymentSession,
 	iso8583Raw []byte,
 	emvDataBase64 string,
+	cardLast4 string,
+	cardNetwork string,
 ) events.TransactionReceivedPayload {
 	return events.TransactionReceivedPayload{
 		TransactionID: session.ID().String(),
@@ -79,8 +86,8 @@ func (p *EventPublisher) buildTransactionReceivedPayload(
 		Currency:      session.Amount().Currency().String(),
 		STAN:          session.STAN().Value(),
 		EntryMode:     session.Channel().ToEntryMode(),
-		CardNetwork:   "", // Completado por el adaptador ISO 8583 al parsear el mensaje
-		CardLast4:     "", // Ídem
+		CardNetwork:   cardNetwork,
+		CardLast4:     cardLast4,
 		EMVDataBase64: emvDataBase64,
 		ISO8583Raw:    iso8583Raw,
 		ReceivedAt:    time.Now().UTC().Format(time.RFC3339),

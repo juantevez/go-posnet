@@ -10,10 +10,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/application/port"
-	valueobject "github.com/juantevez/go-posnet/context/terminal-gateway/domain/valueobject"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/aggregate"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/repository"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/service"
+	valueobject "github.com/juantevez/go-posnet/context/terminal-gateway/domain/valueobject"
 	"github.com/juantevez/go-posnet/pkg/domain"
 	pkgerrors "github.com/juantevez/go-posnet/pkg/errors"
 	"github.com/juantevez/go-posnet/pkg/natsutil"
@@ -141,6 +141,10 @@ func (h *SessionHandler) CreateSession(ctx context.Context, cmd port.CreateSessi
 // Usa el patrón Transactional Outbox: el Save de la sesión y la entrada en el outbox
 // se realizan en la misma transacción Postgres, eliminando el dual-write.
 // El Relay publica el evento a NATS de forma asíncrona con reintentos automáticos.
+//
+// Fix: cmd.CardLast4 y cmd.CardNetwork se pasan explícitamente al publisher.
+// En el flujo QR estos valores vienen del payload del cliente (pay.html).
+// En un flujo ISO 8583 real se parsearían del mensaje raw por el adaptador.
 func (h *SessionHandler) ProcessPayment(ctx context.Context, cmd port.ProcessPaymentCommand) error {
 	ctx, span := observability.StartSpan(ctx, "command.ProcessPayment")
 	defer span.End()
@@ -159,7 +163,17 @@ func (h *SessionHandler) ProcessPayment(ctx context.Context, cmd port.ProcessPay
 		return fmt.Errorf("ProcessPayment: start processing: %w", err)
 	}
 
-	subject, eventID, payload, err := h.publisher.BuildTransactionReceived(ctx, session, cmd.ISO8583Raw, cmd.EMVDataBase64)
+	// Pasar CardLast4/CardNetwork del comando al publisher.
+	// Sin esto el payload llega a Authorization con card_network=""
+	// y ParseCardNetwork falla con ValidationError → msg.Term() silencioso.
+	subject, eventID, payload, err := h.publisher.BuildTransactionReceived(
+		ctx,
+		session,
+		cmd.ISO8583Raw,
+		cmd.EMVDataBase64,
+		cmd.CardLast4,
+		cmd.CardNetwork,
+	)
 	if err != nil {
 		return fmt.Errorf("ProcessPayment: build event: %w", err)
 	}
@@ -334,4 +348,3 @@ func (h *SessionHandler) RequestReversal(ctx context.Context, cmd port.RequestRe
 
 	return h.publisher.PublishReversalRequested(ctx, origTxID, session)
 }
-

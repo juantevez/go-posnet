@@ -13,7 +13,6 @@ import (
 	"github.com/juantevez/go-posnet/context/terminal-gateway/application/query"
 	"github.com/juantevez/go-posnet/pkg/domain"
 	pkgerrors "github.com/juantevez/go-posnet/pkg/errors"
-	"github.com/juantevez/go-posnet/pkg/events"
 	"github.com/juantevez/go-posnet/pkg/natsutil"
 	"github.com/juantevez/go-posnet/pkg/observability"
 )
@@ -61,7 +60,6 @@ func (h *QRHandler) handleCreateQRSession(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Defaults para el simulador
 	if req.TerminalID == "" {
 		req.TerminalID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 	}
@@ -94,8 +92,6 @@ func (h *QRHandler) handleCreateQRSession(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// qr_content apunta al frontend con la IP del host (no del container Docker)
-	// Configurar POSNET_HOST=192.168.0.2 en el docker-compose para la IP correcta
 	localIP := getLocalIP()
 	qrContent := fmt.Sprintf("http://%s:5173/pay/%s", localIP, result.TransactionID)
 
@@ -110,13 +106,23 @@ func (h *QRHandler) handleCreateQRSession(w http.ResponseWriter, r *http.Request
 }
 
 // POST /api/sessions/{id}/pay
+//
+// Fix: en lugar de publicar TransactionReceived directamente a NATS,
+// delega a sessionService.ProcessPayment() que:
+//  1. Llama session.StartProcessing() → transiciona AWAITING_PAYMENT → PROCESSING
+//  2. Persiste la sesión en PROCESSING (SaveTx)
+//  3. Escribe el evento en el outbox atómicamente (misma TX de Postgres)
+//  4. El Relay publica a NATS desde el outbox
+//
+// Sin este fix la sesión queda en AWAITING_PAYMENT y cuando Authorization
+// responde con AuthApproved, la transición AWAITING_PAYMENT → APPROVED
+// falla porque no está permitida en la state machine.
 func (h *QRHandler) handleSimulatePay(w http.ResponseWriter, r *http.Request) {
 	ctx, span := observability.StartSpan(r.Context(), "http.SimulatePay")
 	defer span.End()
 
 	txID := r.PathValue("id")
-	parsedID, err := domain.ParseTransactionID(txID)
-	if err != nil {
+	if _, err := domain.ParseTransactionID(txID); err != nil {
 		writeJSON(w, http.StatusBadRequest, errResp("INVALID_ID", "invalid transaction id"))
 		return
 	}
@@ -137,37 +143,27 @@ func (h *QRHandler) handleSimulatePay(w http.ResponseWriter, r *http.Request) {
 		req.EntryMode = "QR"
 	}
 
-	session, err := h.queryHandler.GetSessionStatus(ctx, parsedID)
-	if err != nil || session == nil {
-		writeJSON(w, http.StatusNotFound, errResp("NOT_FOUND", "session not found or expired"))
-		return
-	}
-
-	eventID := domain.NewTransactionID().String()
-	payload := events.TransactionReceivedPayload{
+	// Delegar a ProcessPayment:
+	//   StartProcessing() → AWAITING_PAYMENT → PROCESSING
+	//   SaveTx() + outbox.InsertTx() atómico en Postgres
+	//   Relay publica TransactionReceived a NATS
+	cmd := port.ProcessPaymentCommand{
+		EventID:       domain.NewTransactionID().String(),
 		TransactionID: txID,
-		TerminalID:    session.TerminalID,
-		MerchantID:    session.MerchantID,
-		AmountCents:   session.AmountCents,
-		Currency:      session.Currency,
-		STAN:          int(time.Now().UnixNano()%999998 + 1),
-		EntryMode:     req.EntryMode,
+		ISO8583Raw:    []byte{},
+		EMVDataBase64: "",
 		CardLast4:     req.CardLast4,
 		CardNetwork:   req.CardNetwork,
-		EMVDataBase64: "",
-		ReceivedAt:    time.Now().UTC().Format(time.RFC3339),
 	}
 
-	_, err = h.natsPub.Publish(ctx,
-		events.SubjectTransactionReceived,
-		events.SubjectTransactionReceived,
-		txID, "PaymentSession",
-		txID, eventID,
-		payload,
-	)
-	if err != nil {
+	if err := h.sessionService.ProcessPayment(ctx, cmd); err != nil {
+		var notFound *pkgerrors.NotFoundError
+		if errors.As(err, &notFound) {
+			writeJSON(w, http.StatusNotFound, errResp("NOT_FOUND", "session not found or expired"))
+			return
+		}
 		observability.RecordError(ctx, err)
-		writeJSON(w, http.StatusInternalServerError, errResp("NATS_ERROR", "failed to publish payment"))
+		writeJSON(w, http.StatusInternalServerError, errResp("INTERNAL", err.Error()))
 		return
 	}
 
@@ -214,10 +210,6 @@ func (h *QRHandler) handleSessionStatus(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// getLocalIP retorna la IP del host configurada via POSNET_HOST,
-// o detecta la IP de red como fallback.
-// En Docker siempre configurar POSNET_HOST con la IP real del host
-// (ej: 192.168.0.2) para que el celular pueda acceder al frontend.
 func getLocalIP() string {
 	if host := os.Getenv("POSNET_HOST"); host != "" {
 		return host

@@ -72,6 +72,12 @@ func (h *Handler) handleGetFraudCase(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusNotFound, errResp("NOT_FOUND", "fraud case not found"))
 			return
 		}
+		var validationErr *pkgerrors.ValidationError
+		if errors.As(err, &validationErr) {
+			writeJSON(w, http.StatusBadRequest, errResp("INVALID_ID", err.Error()))
+			return
+		}
+
 		observability.RecordError(ctx, err)
 		writeJSON(w, http.StatusInternalServerError, errResp("INTERNAL", "internal error"))
 		return
