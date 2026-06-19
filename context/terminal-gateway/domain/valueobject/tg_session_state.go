@@ -69,11 +69,11 @@ func ParsePaymentChannel(s string) (PaymentChannel, error) {
 func (c PaymentChannel) String() string { return string(c) }
 
 // ToEntryMode convierte el canal al EntryMode equivalente para el mensaje ISO 8583.
+// QR se mapea a CONTACTLESS: en ISO 8583 no existe un entry mode propio para QR,
+// y semánticamente es una lectura sin contacto físico con la tarjeta.
 func (c PaymentChannel) ToEntryMode() string {
 	switch c {
-	case ChannelQR:
-		return "QR"
-	case ChannelNFC, ChannelApplePay, ChannelGooglePay:
+	case ChannelQR, ChannelNFC, ChannelApplePay, ChannelGooglePay:
 		return "CONTACTLESS"
 	case ChannelMagstripe:
 		return "MAGSTRIPE"

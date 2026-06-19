@@ -19,14 +19,16 @@ func NewMockAcquirerGateway() *MockAcquirerGateway {
 	return &MockAcquirerGateway{}
 }
 
-// Authorize siempre retorna aprobación con código "AUTH01".
+// Authorize siempre retorna aprobación.
+// AuthCode: 6 chars alfanuméricos uppercase — formato ISO 8583 DE-38.
+// Usamos los últimos 6 dígitos del STAN con padding para garantizar exactamente 6 chars.
 func (m *MockAcquirerGateway) Authorize(
 	ctx context.Context,
 	tx *aggregate.Transaction,
 ) (service.AcquirerResponse, error) {
 	return service.AcquirerResponse{
 		ResponseCode: valueobject.ISO_APPROVED, // "00"
-		AuthCode:     fmt.Sprintf("A%05d", tx.STAN().Value()),
+		AuthCode:     fmt.Sprintf("%06d", tx.STAN().Value()%1000000),
 		ARPCBase64:   "",
 		RespondedAt:  time.Now().UTC(),
 	}, nil
