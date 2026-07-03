@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/juantevez/go-posnet/context/fraud-detection/domain/aggregate"
 	"github.com/juantevez/go-posnet/context/fraud-detection/domain/entity"
 	"github.com/juantevez/go-posnet/context/fraud-detection/domain/valueobject"
@@ -18,12 +18,21 @@ import (
 	pkgerrors "github.com/juantevez/go-posnet/pkg/errors"
 )
 
+// pgxPool es el subconjunto de *pgxpool.Pool que los repositorios de este
+// archivo necesitan. Permite testear las queries con un pool falso (ej:
+// pgxmock) sin depender del tipo concreto de pgx.
+type pgxPool interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
 // ─── FraudCaseRepo ────────────────────────────────────────────────────────────
 
 // FraudCaseRepo implementa repository.FraudCaseRepository.
-type FraudCaseRepo struct{ pool *pgxpool.Pool }
+type FraudCaseRepo struct{ pool pgxPool }
 
-func NewFraudCaseRepo(pool *pgxpool.Pool) *FraudCaseRepo {
+func NewFraudCaseRepo(pool pgxPool) *FraudCaseRepo {
 	return &FraudCaseRepo{pool: pool}
 }
 
@@ -159,14 +168,14 @@ func (r *FraudCaseRepo) FindByTransactionID(
 // Las reglas se recargan desde Postgres cada cacheTTL para permitir
 // cambios de configuración sin redespliegue.
 type FraudRuleRepo struct {
-	pool     *pgxpool.Pool
+	pool     pgxPool
 	cacheTTL time.Duration
 	mu       sync.RWMutex
 	cached   []*entity.FraudRule
 	cachedAt time.Time
 }
 
-func NewFraudRuleRepo(pool *pgxpool.Pool, cacheTTL time.Duration) *FraudRuleRepo {
+func NewFraudRuleRepo(pool pgxPool, cacheTTL time.Duration) *FraudRuleRepo {
 	return &FraudRuleRepo{pool: pool, cacheTTL: cacheTTL}
 }
 
@@ -252,9 +261,9 @@ func (r *FraudRuleRepo) Save(ctx context.Context, rule *entity.FraudRule) error 
 // Consulta la tabla del BC Authorization (schema authorization) — solo lectura.
 // NOTA: en producción considerar una vista materializada o una tabla de resumen
 // dedicada para evitar queries costosas en el schema de otro BC.
-type TransactionHistoryRepo struct{ pool *pgxpool.Pool }
+type TransactionHistoryRepo struct{ pool pgxPool }
 
-func NewTransactionHistoryRepo(pool *pgxpool.Pool) *TransactionHistoryRepo {
+func NewTransactionHistoryRepo(pool pgxPool) *TransactionHistoryRepo {
 	return &TransactionHistoryRepo{pool: pool}
 }
 

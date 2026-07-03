@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/juantevez/go-posnet/context/fraud-detection/application/port"
 	"github.com/juantevez/go-posnet/context/fraud-detection/domain/aggregate"
 	"github.com/juantevez/go-posnet/context/fraud-detection/domain/repository"
@@ -27,7 +26,7 @@ type EvaluateTransactionHandler struct {
 	engine        *service.RuleEngine
 	publisher     service.EventPublisher
 	idempotency   *natsutil.IdempotencyStore
-	pool          *pgxpool.Pool
+	pool          pgutil.PgxPool
 }
 
 // NewEvaluateTransactionHandler construye el handler con sus dependencias.
@@ -36,7 +35,7 @@ func NewEvaluateTransactionHandler(
 	engine *service.RuleEngine,
 	publisher service.EventPublisher,
 	idempotency *natsutil.IdempotencyStore,
-	pool *pgxpool.Pool,
+	pool pgutil.PgxPool,
 ) *EvaluateTransactionHandler {
 	return &EvaluateTransactionHandler{
 		fraudCaseRepo: fraudCaseRepo,
@@ -120,6 +119,7 @@ func (h *EvaluateTransactionHandler) EvaluateTransaction(
 	)
 
 	// ── 4. Persistir + marcar idempotencia (atómico) ─────────────────────────
+	var published bool
 	err = pgutil.WithReadCommitted(ctx, h.pool, func(tx pgx.Tx) error {
 		inserted, err := h.idempotency.TryMarkAsProcessed(ctx, tx, cmd.EventID)
 		if err != nil {
@@ -129,11 +129,18 @@ func (h *EvaluateTransactionHandler) EvaluateTransaction(
 			log.Info("fraud check event already processed — skipping")
 			return nil
 		}
-		return h.fraudCaseRepo.Save(ctx, fc)
+		if err := h.fraudCaseRepo.Save(ctx, fc); err != nil {
+			return err
+		}
+		published = true
+		return nil
 	})
 	if err != nil {
 		observability.RecordError(ctx, err)
 		return fmt.Errorf("EvaluateTransaction: persist: %w", err)
+	}
+	if !published {
+		return nil
 	}
 
 	// ── 5. Publicar FraudScoreCalculated a NATS ──────────────────────────────
