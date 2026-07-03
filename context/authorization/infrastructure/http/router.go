@@ -3,9 +3,9 @@ package http
 import (
 	"net/http"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/juantevez/go-posnet/context/authorization/application/port"
 	"github.com/juantevez/go-posnet/pkg/observability"
+	"github.com/juantevez/go-posnet/pkg/pgutil"
 )
 
 // NewRouter construye y retorna el mux HTTP del BC Authorization
@@ -17,7 +17,7 @@ import (
 //	GET  /readyz               → readiness probe (verifica Postgres)
 //	GET  /metrics              → métricas Prometheus
 //	GET  /transactions/{id}    → estado de una transacción (operaciones)
-func NewRouter(queryService port.QueryService, pool *pgxpool.Pool) http.Handler {
+func NewRouter(queryService port.QueryService, pool pgutil.PgxPool) http.Handler {
 	mux := http.NewServeMux()
 
 	h := NewHandler(queryService, pool)

@@ -10,7 +10,6 @@ import (
 	//"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/juantevez/go-posnet/context/authorization/application/port"
 	"github.com/juantevez/go-posnet/context/authorization/domain/aggregate"
 	"github.com/juantevez/go-posnet/context/authorization/domain/repository"
@@ -34,7 +33,7 @@ type AuthorizationHandler struct {
 	acquirer    service.AcquirerGateway
 	publisher   service.EventPublisher
 	idempotency *natsutil.IdempotencyStore
-	pool        *pgxpool.Pool
+	pool        pgutil.PgxPool
 }
 
 // NewAuthorizationHandler construye el handler con todas sus dependencias.
@@ -43,7 +42,7 @@ func NewAuthorizationHandler(
 	acquirer service.AcquirerGateway,
 	publisher service.EventPublisher,
 	idempotency *natsutil.IdempotencyStore,
-	pool *pgxpool.Pool,
+	pool pgutil.PgxPool,
 ) *AuthorizationHandler {
 	return &AuthorizationHandler{
 		repo:        repo,

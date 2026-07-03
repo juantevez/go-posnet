@@ -10,22 +10,30 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/juantevez/go-posnet/context/authorization/domain/aggregate"
 	"github.com/juantevez/go-posnet/context/authorization/domain/valueobject"
 	"github.com/juantevez/go-posnet/pkg/domain"
 	pkgerrors "github.com/juantevez/go-posnet/pkg/errors"
 )
 
+// pgxPool es el subconjunto de *pgxpool.Pool que este repositorio necesita.
+// Permite testear las queries con un pool falso (ej: pgxmock) sin depender
+// del tipo concreto de pgx.
+type pgxPool interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
 // TransactionRepo implementa repository.TransactionRepository usando pgx/v5.
 // Usa sqlc para las queries (código generado en infrastructure/postgres/sqlc/).
 // Este archivo contiene solo las queries complejas que sqlc no genera bien.
 type TransactionRepo struct {
-	pool *pgxpool.Pool
+	pool pgxPool
 }
 
 // NewTransactionRepo construye el repositorio con el pool de conexiones.
-func NewTransactionRepo(pool *pgxpool.Pool) *TransactionRepo {
+func NewTransactionRepo(pool pgxPool) *TransactionRepo {
 	return &TransactionRepo{pool: pool}
 }
 
@@ -157,7 +165,11 @@ func (r *TransactionRepo) FindBySTAN(
 	row := r.pool.QueryRow(ctx, query, terminalID.String(), stan.Value(), date)
 	tx, err := scanTransaction(row)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		// scanTransaction convierte pgx.ErrNoRows en *pkgerrors.NotFoundError,
+		// por lo que no queda en la cadena de errors.Is — hay que detectar el
+		// tipo convertido en lugar del error original de pgx.
+		var notFound *pkgerrors.NotFoundError
+		if errors.As(err, &notFound) {
 			return nil, nil // No encontrado no es un error en este caso
 		}
 		return nil, err

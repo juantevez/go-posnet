@@ -10,7 +10,6 @@ import (
 
 	"errors"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/juantevez/go-posnet/context/authorization/application/port"
 	"github.com/juantevez/go-posnet/pkg/domain"
 	pkgerrors "github.com/juantevez/go-posnet/pkg/errors"
@@ -21,10 +20,10 @@ import (
 // Handler contiene todos los handlers HTTP del BC.
 type Handler struct {
 	queryService port.QueryService
-	pool         *pgxpool.Pool
+	pool         pgutil.PgxPool
 }
 
-func NewHandler(queryService port.QueryService, pool *pgxpool.Pool) *Handler {
+func NewHandler(queryService port.QueryService, pool pgutil.PgxPool) *Handler {
 	return &Handler{queryService: queryService, pool: pool}
 }
 

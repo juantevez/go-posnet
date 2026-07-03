@@ -1,0 +1,237 @@
+package command_test
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/juantevez/go-posnet/context/authorization/application/port"
+	"github.com/juantevez/go-posnet/context/authorization/domain/aggregate"
+	"github.com/juantevez/go-posnet/context/authorization/domain/repository"
+	"github.com/juantevez/go-posnet/context/authorization/domain/service"
+	"github.com/juantevez/go-posnet/context/authorization/domain/valueobject"
+	"github.com/juantevez/go-posnet/pkg/domain"
+)
+
+// idempotencySchema es el schema usado por natsutil.NewIdempotencyStore en los
+// tests. La query que arma IdempotencyStore.TryMarkAsProcessed incluye este
+// nombre, así que los expectations de pgxmock deben usarlo también.
+const idempotencySchema = "authorization"
+
+// ─── fakeRepo ──────────────────────────────────────────────────────────────
+
+type fakeRepo struct {
+	saveErr    error
+	savedTxs   []*aggregate.Transaction
+	findResult *aggregate.Transaction
+	findErr    error
+}
+
+var _ repository.TransactionRepository = (*fakeRepo)(nil)
+
+func (f *fakeRepo) Save(_ context.Context, tx *aggregate.Transaction) error {
+	f.savedTxs = append(f.savedTxs, tx)
+	return f.saveErr
+}
+
+func (f *fakeRepo) FindByID(_ context.Context, _ domain.TransactionID) (*aggregate.Transaction, error) {
+	return f.findResult, f.findErr
+}
+
+func (f *fakeRepo) FindBySTAN(_ context.Context, _ domain.TerminalID, _ domain.STAN, _ time.Time) (*aggregate.Transaction, error) {
+	return nil, nil
+}
+
+func (f *fakeRepo) UpdateState(_ context.Context, _ domain.TransactionID, _ valueobject.TransactionState) error {
+	return nil
+}
+
+func (f *fakeRepo) ExistsByID(_ context.Context, _ domain.TransactionID) (bool, error) {
+	return false, nil
+}
+
+// ─── fakeAcquirer ────────────────────────────────────────────────────────────
+
+type fakeAcquirer struct {
+	authorizeResp  service.AcquirerResponse
+	authorizeErr   error
+	authorizeCalls int
+
+	reverseErr   error
+	reverseCalls int
+}
+
+var _ service.AcquirerGateway = (*fakeAcquirer)(nil)
+
+func (f *fakeAcquirer) Authorize(_ context.Context, _ *aggregate.Transaction) (service.AcquirerResponse, error) {
+	f.authorizeCalls++
+	return f.authorizeResp, f.authorizeErr
+}
+
+func (f *fakeAcquirer) Reverse(_ context.Context, _ *aggregate.Transaction) error {
+	f.reverseCalls++
+	return f.reverseErr
+}
+
+// ─── fakePublisher ───────────────────────────────────────────────────────────
+
+type fakePublisher struct {
+	approvedCalls int
+	approvedErr   error
+
+	rejectedCalls int
+	rejectedErr   error
+
+	fraudCheckCalls int
+	fraudCheckErr   error
+
+	reversalCalls int
+	reversalErr   error
+}
+
+var _ service.EventPublisher = (*fakePublisher)(nil)
+
+func (f *fakePublisher) PublishApproved(_ context.Context, _ *aggregate.Transaction) error {
+	f.approvedCalls++
+	return f.approvedErr
+}
+
+func (f *fakePublisher) PublishRejected(_ context.Context, _ *aggregate.Transaction) error {
+	f.rejectedCalls++
+	return f.rejectedErr
+}
+
+func (f *fakePublisher) PublishFraudCheckRequested(_ context.Context, _ *aggregate.Transaction) error {
+	f.fraudCheckCalls++
+	return f.fraudCheckErr
+}
+
+func (f *fakePublisher) PublishReversalCompleted(_ context.Context, _ domain.TransactionID, _ *aggregate.Transaction) error {
+	f.reversalCalls++
+	return f.reversalErr
+}
+
+// ─── Value object / command builders ─────────────────────────────────────────
+
+func mustMoney(t *testing.T, cents int64) domain.Money {
+	t.Helper()
+	m, err := domain.NewMoney(cents, domain.ARS)
+	if err != nil {
+		t.Fatalf("NewMoney(%d) error = %v", cents, err)
+	}
+	return m
+}
+
+func mustSTAN(t *testing.T, v int) domain.STAN {
+	t.Helper()
+	s, err := domain.NewSTAN(v)
+	if err != nil {
+		t.Fatalf("NewSTAN(%d) error = %v", v, err)
+	}
+	return s
+}
+
+func mustPAN(t *testing.T) domain.PAN {
+	t.Helper()
+	p, err := domain.NewPAN("1234", domain.NetworkVisa)
+	if err != nil {
+		t.Fatalf("NewPAN() error = %v", err)
+	}
+	return p
+}
+
+// newValidTransaction crea una Transaction en estado RECEIVED.
+func newValidTransaction(t *testing.T) *aggregate.Transaction {
+	t.Helper()
+	tx, err := aggregate.NewTransaction(
+		domain.NewTransactionID(),
+		domain.NewTerminalID(),
+		domain.NewMerchantID(),
+		mustMoney(t, 5000),
+		mustSTAN(t, 1),
+		mustPAN(t),
+		valueobject.EntryModeChip,
+		"emv-data-base64",
+		[]byte{0xAA, 0xBB},
+	)
+	if err != nil {
+		t.Fatalf("NewTransaction() error = %v", err)
+	}
+	return tx
+}
+
+// newFraudCheckingTransaction avanza una Transaction nueva hasta FRAUD_CHECKING.
+func newFraudCheckingTransaction(t *testing.T) *aggregate.Transaction {
+	t.Helper()
+	tx := newValidTransaction(t)
+	if err := tx.StartFraudCheck(); err != nil {
+		t.Fatalf("StartFraudCheck() error = %v", err)
+	}
+	return tx
+}
+
+// newApprovedTransaction avanza una Transaction nueva hasta APPROVED.
+func newApprovedTransaction(t *testing.T) *aggregate.Transaction {
+	t.Helper()
+	tx := newFraudCheckingTransaction(t)
+	fd, err := valueobject.NewFraudDecision(10, valueobject.FraudDecisionApprove, nil)
+	if err != nil {
+		t.Fatalf("NewFraudDecision() error = %v", err)
+	}
+	if err := tx.ApplyFraudDecision(fd); err != nil {
+		t.Fatalf("ApplyFraudDecision() error = %v", err)
+	}
+	ac, err := domain.NewAuthCode("AB1234")
+	if err != nil {
+		t.Fatalf("NewAuthCode() error = %v", err)
+	}
+	if err := tx.Approve(ac); err != nil {
+		t.Fatalf("Approve() error = %v", err)
+	}
+	return tx
+}
+
+// validAuthorizeCmd devuelve un AuthorizeTransactionCommand válido, listo
+// para ser ajustado en cada caso de test.
+func validAuthorizeCmd(t *testing.T) port.AuthorizeTransactionCommand {
+	t.Helper()
+	return port.AuthorizeTransactionCommand{
+		EventID:       domain.NewTransactionID().String(),
+		TransactionID: domain.NewTransactionID().String(),
+		TerminalID:    domain.NewTerminalID().String(),
+		MerchantID:    domain.NewMerchantID().String(),
+		AmountCents:   5000,
+		Currency:      string(domain.ARS),
+		STAN:          1,
+		EntryMode:     string(valueobject.EntryModeChip),
+		CardLast4:     "1234",
+		CardNetwork:   string(domain.NetworkVisa),
+		EMVDataBase64: "emv==",
+		ISO8583Raw:    []byte{0x01, 0x02},
+	}
+}
+
+// validFraudScoreCmd devuelve un ApplyFraudScoreCommand válido para txID.
+func validFraudScoreCmd(t *testing.T, txID domain.TransactionID) port.ApplyFraudScoreCommand {
+	t.Helper()
+	return port.ApplyFraudScoreCommand{
+		EventID:       domain.NewTransactionID().String(),
+		TransactionID: txID.String(),
+		Score:         10,
+		Decision:      valueobject.FraudDecisionApprove,
+	}
+}
+
+// validReversalCmd devuelve un ProcessReversalCommand válido para txID.
+func validReversalCmd(t *testing.T, txID domain.TransactionID) port.ProcessReversalCommand {
+	t.Helper()
+	return port.ProcessReversalCommand{
+		EventID:               domain.NewTransactionID().String(),
+		OriginalTransactionID: txID.String(),
+		TerminalID:            domain.NewTerminalID().String(),
+		MerchantID:            domain.NewMerchantID().String(),
+		AmountCents:           5000,
+		Currency:              string(domain.ARS),
+		OriginalAuthCode:      "AB1234",
+	}
+}

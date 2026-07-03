@@ -13,7 +13,7 @@ import (
 // de Kubernetes / Docker Compose.
 //
 // Retorna nil si la BD responde. Retorna error descriptivo si no está disponible.
-func HealthCheck(ctx context.Context, pool *pgxpool.Pool) error {
+func HealthCheck(ctx context.Context, pool PgxPool) error {
 	if err := pool.Ping(ctx); err != nil {
 		return fmt.Errorf("postgres health check failed: %w", err)
 	}
@@ -23,7 +23,7 @@ func HealthCheck(ctx context.Context, pool *pgxpool.Pool) error {
 // HealthCheckWithTimeout ejecuta el health check con un timeout acotado.
 // Evita que un readiness probe cuelgue indefinidamente si la BD no responde.
 // timeout recomendado: 2–3 segundos.
-func HealthCheckWithTimeout(ctx context.Context, pool *pgxpool.Pool, timeout time.Duration) error {
+func HealthCheckWithTimeout(ctx context.Context, pool PgxPool, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	return HealthCheck(ctx, pool)
