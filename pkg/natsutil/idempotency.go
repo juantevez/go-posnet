@@ -6,18 +6,24 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// idempotencyPool es el subconjunto de *pgxpool.Pool que necesita este
+// store — permite testear IsAlreadyProcessed con un pool falso (ej: pgxmock)
+// sin depender del tipo concreto de pgx.
+type idempotencyPool interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
 
 // IdempotencyStore verifica y registra event_ids procesados en Postgres.
 // Cada BC tiene su propia tabla processed_events en su schema.
 type IdempotencyStore struct {
-	pool   *pgxpool.Pool
+	pool   idempotencyPool
 	schema string // ej: "authorization", "settlement"
 }
 
 // NewIdempotencyStore crea un IdempotencyStore para el schema del BC dado.
-func NewIdempotencyStore(pool *pgxpool.Pool, schema string) *IdempotencyStore {
+func NewIdempotencyStore(pool idempotencyPool, schema string) *IdempotencyStore {
 	return &IdempotencyStore{pool: pool, schema: schema}
 }
 

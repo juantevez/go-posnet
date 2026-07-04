@@ -17,9 +17,14 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	nats "github.com/nats-io/nats.go"
 )
+
+// pgxPool es el subconjunto de *pgxpool.Pool que el Relay necesita — permite
+// testearlo con un pool falso (ej: pgxmock) sin depender del tipo concreto.
+type pgxPool interface {
+	Begin(ctx context.Context) (pgx.Tx, error)
+}
 
 // Store escribe entradas en la tabla outbox dentro de una transacción existente.
 type Store struct {
@@ -50,7 +55,7 @@ func (s *Store) InsertTx(ctx context.Context, tx pgx.Tx, subject, eventID string
 // Múltiples instancias pueden correr en paralelo de forma segura: FOR UPDATE SKIP LOCKED
 // garantiza que dos Relays no procesen la misma fila.
 type Relay struct {
-	pool     *pgxpool.Pool
+	pool     pgxPool
 	js       nats.JetStreamContext
 	schema   string
 	interval time.Duration
@@ -58,7 +63,7 @@ type Relay struct {
 }
 
 // NewRelay crea un Relay que sondea cada interval y procesa hasta batch filas por ciclo.
-func NewRelay(pool *pgxpool.Pool, js nats.JetStreamContext, schema string, interval time.Duration, batch int) *Relay {
+func NewRelay(pool pgxPool, js nats.JetStreamContext, schema string, interval time.Duration, batch int) *Relay {
 	return &Relay{pool: pool, js: js, schema: schema, interval: interval, batch: batch}
 }
 

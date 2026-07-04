@@ -2,6 +2,7 @@ package natsutil
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/nats-io/nats.go"
 )
@@ -32,6 +33,7 @@ func EnsureStreams(js nats.JetStreamContext) error {
 		_, err = js.AddStream(&nats.StreamConfig{
 			Name:      cfg.Name,
 			Subjects:  cfg.Subjects,
+			MaxAge:    time.Duration(cfg.MaxAge) * time.Second, // 0 = sin límite de retención por edad
 			Replicas:  1, // ← 1 para single-node; cambiar a 3 en producción con cluster
 			Storage:   nats.FileStorage,
 			Retention: nats.LimitsPolicy,

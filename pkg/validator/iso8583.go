@@ -8,14 +8,8 @@ func ValidateISO8583(msg []byte) error {
 	if len(msg) < 12 {
 		return fmt.Errorf("iso8583: message too short: %d bytes (minimum 12)", len(msg))
 	}
-	mti := msg[0:4]
-	// MTI debe ser numérico (BCD o ASCII según implementación del adquirente)
-	for _, b := range mti {
-		if b < '0' || b > '9' {
-			// Puede ser BCD — validación básica: no todos cero
-			break
-		}
-	}
+	// El MTI (bytes 0-3) puede venir en BCD o ASCII según el adquirente —
+	// no se valida su contenido acá, solo la longitud mínima del mensaje.
 	// El bitmap primario ocupa bytes 4–11
 	bitmap := msg[4:12]
 	allZero := true
