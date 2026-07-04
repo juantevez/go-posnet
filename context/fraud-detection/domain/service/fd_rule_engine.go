@@ -145,12 +145,6 @@ func (re *RuleEngine) buildRuleContext(ctx context.Context, fc *aggregate.FraudC
 		errs    []error
 	)
 
-	type queryResult struct {
-		field    string
-		intVal   int
-		int64Val int64
-	}
-
 	queries := []struct {
 		name string
 		fn   func() (interface{}, error)
