@@ -76,6 +76,10 @@ func (n *Notification) MarkSent(httpStatus int) error {
 
 // MarkFailed registra un intento fallido y decide si reintentar o marcar como DEAD.
 func (n *Notification) MarkFailed(httpStatus int, errorMessage string) error {
+	if err := n.transition(valueobject.StateFailed); err != nil {
+		return err
+	}
+
 	attempt, _ := entity.NewDeliveryAttempt(n.id, n.currentAttemptNumber(), false, httpStatus, errorMessage)
 	n.attempts = append(n.attempts, attempt)
 

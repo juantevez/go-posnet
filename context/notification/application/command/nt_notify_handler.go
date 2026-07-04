@@ -7,7 +7,6 @@ import (
 	"log/slog"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/juantevez/go-posnet/context/notification/application/port"
 	"github.com/juantevez/go-posnet/context/notification/domain/aggregate"
 	"github.com/juantevez/go-posnet/context/notification/domain/repository"
@@ -29,7 +28,7 @@ type NotifyHandler struct {
 	webhook     service.WebhookDispatcher
 	publisher   service.EventPublisher
 	idempotency *natsutil.IdempotencyStore
-	pool        *pgxpool.Pool
+	pool        pgutil.PgxPool
 }
 
 func NewNotifyHandler(
@@ -38,7 +37,7 @@ func NewNotifyHandler(
 	webhook service.WebhookDispatcher,
 	publisher service.EventPublisher,
 	idempotency *natsutil.IdempotencyStore,
-	pool *pgxpool.Pool,
+	pool pgutil.PgxPool,
 ) *NotifyHandler {
 	return &NotifyHandler{
 		notifRepo:   notifRepo,

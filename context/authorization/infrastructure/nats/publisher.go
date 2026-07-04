@@ -79,6 +79,11 @@ func (p *EventPublisher) PublishRejected(ctx context.Context, tx *aggregate.Tran
 		RejectionReason: rc.Description(),
 		IsRetryable:     rc.IsRetryable(),
 		Source:          string(rc.Source()),
+		AmountCents:     tx.Amount().Cents(),
+		Currency:        tx.Amount().Currency().String(),
+		CardLast4:       tx.PAN().Last4(),
+		CardNetwork:     string(tx.PAN().Network()),
+		EntryMode:       tx.EntryMode().String(),
 		RejectedAt:      time.Now().UTC().Format(time.RFC3339),
 	}
 

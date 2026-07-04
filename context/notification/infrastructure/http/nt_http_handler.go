@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/juantevez/go-posnet/context/notification/application/command"
 	"github.com/juantevez/go-posnet/context/notification/application/query"
 	pkgerrors "github.com/juantevez/go-posnet/pkg/errors"
@@ -19,13 +18,13 @@ import (
 type Handler struct {
 	queryHandler *query.NotificationQueryHandler
 	adminHandler *command.AdminHandler
-	pool         *pgxpool.Pool
+	pool         pgutil.PgxPool
 }
 
 func NewHandler(
 	queryHandler *query.NotificationQueryHandler,
 	adminHandler *command.AdminHandler,
-	pool *pgxpool.Pool,
+	pool pgutil.PgxPool,
 ) *Handler {
 	return &Handler{queryHandler: queryHandler, adminHandler: adminHandler, pool: pool}
 }

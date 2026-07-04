@@ -152,6 +152,11 @@ func (s *Subscriber) handleAuthRejected(msg *natsclient.Msg) {
 		RejectionCode:   payload.RejectionCode,
 		RejectionReason: payload.RejectionReason,
 		IsRetryable:     payload.IsRetryable,
+		AmountCents:     payload.AmountCents,
+		Currency:        payload.Currency,
+		CardLast4:       payload.CardLast4,
+		CardNetwork:     payload.CardNetwork,
+		EntryMode:       payload.EntryMode,
 		RejectedAt:      payload.RejectedAt,
 	}
 

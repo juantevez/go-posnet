@@ -21,5 +21,10 @@ type AuthorizationRejectedPayload struct {
 	RejectionReason string `json:"rejection_reason"` // Descripción legible para logs y comprobante
 	IsRetryable     bool   `json:"is_retryable"`     // ¿El cliente puede reintentar con otro medio?
 	Source          string `json:"source"`           // ACQUIRER | FRAUD | TIMEOUT | VALIDATION
-	RejectedAt      string `json:"rejected_at"`      // RFC3339 UTC
+	AmountCents     int64  `json:"amount_cents"`
+	Currency        string `json:"currency"`
+	CardLast4       string `json:"card_last4"`
+	CardNetwork     string `json:"card_network"`
+	EntryMode       string `json:"entry_mode"`
+	RejectedAt      string `json:"rejected_at"` // RFC3339 UTC
 }

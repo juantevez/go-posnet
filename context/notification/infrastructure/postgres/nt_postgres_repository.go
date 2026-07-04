@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/juantevez/go-posnet/context/notification/domain/aggregate"
 	"github.com/juantevez/go-posnet/context/notification/domain/entity"
 	"github.com/juantevez/go-posnet/context/notification/domain/valueobject"
@@ -18,10 +17,19 @@ import (
 	"github.com/juantevez/go-posnet/pkg/pgutil"
 )
 
-// NotificationRepo implementa repository.NotificationRepository.
-type NotificationRepo struct{ pool *pgxpool.Pool }
+// pgxPool es el subconjunto de *pgxpool.Pool que este repositorio necesita:
+// pgutil.PgxPool (BeginTx/Ping, usado por pgutil.WithReadCommitted en Save)
+// más QueryRow/Query, usados directamente en las consultas de lectura.
+type pgxPool interface {
+	pgutil.PgxPool
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
 
-func NewNotificationRepo(pool *pgxpool.Pool) *NotificationRepo {
+// NotificationRepo implementa repository.NotificationRepository.
+type NotificationRepo struct{ pool pgxPool }
+
+func NewNotificationRepo(pool pgxPool) *NotificationRepo {
 	return &NotificationRepo{pool: pool}
 }
 
