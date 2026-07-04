@@ -13,7 +13,6 @@ import (
 	"github.com/juantevez/go-posnet/context/terminal-gateway/application/query"
 	"github.com/juantevez/go-posnet/pkg/domain"
 	pkgerrors "github.com/juantevez/go-posnet/pkg/errors"
-	"github.com/juantevez/go-posnet/pkg/natsutil"
 	"github.com/juantevez/go-posnet/pkg/observability"
 )
 
@@ -22,18 +21,15 @@ import (
 type QRHandler struct {
 	sessionService port.SessionService
 	queryHandler   *query.SessionQueryHandler
-	natsPub        *natsutil.Publisher
 }
 
 func NewQRHandler(
 	sessionService port.SessionService,
 	queryHandler *query.SessionQueryHandler,
-	natsPub *natsutil.Publisher,
 ) *QRHandler {
 	return &QRHandler{
 		sessionService: sessionService,
 		queryHandler:   queryHandler,
-		natsPub:        natsPub,
 	}
 }
 

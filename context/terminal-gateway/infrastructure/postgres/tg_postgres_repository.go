@@ -8,19 +8,25 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-	valueobject "github.com/juantevez/go-posnet/context/terminal-gateway/domain/valueobject"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/aggregate"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/entity"
+	valueobject "github.com/juantevez/go-posnet/context/terminal-gateway/domain/valueobject"
 	"github.com/juantevez/go-posnet/pkg/domain"
 	pkgerrors "github.com/juantevez/go-posnet/pkg/errors"
 )
 
+// pgxPool es el subconjunto de *pgxpool.Pool que estos repositorios necesitan.
+type pgxPool interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
 // ─── PaymentSessionRepo ───────────────────────────────────────────────────────
 
-type PaymentSessionRepo struct{ pool *pgxpool.Pool }
+type PaymentSessionRepo struct{ pool pgxPool }
 
-func NewPaymentSessionRepo(pool *pgxpool.Pool) *PaymentSessionRepo {
+func NewPaymentSessionRepo(pool pgxPool) *PaymentSessionRepo {
 	return &PaymentSessionRepo{pool: pool}
 }
 
@@ -186,9 +192,9 @@ func scanSession(row pgx.Row) (*aggregate.PaymentSession, error) {
 
 // ─── TerminalRepo ─────────────────────────────────────────────────────────────
 
-type TerminalRepo struct{ pool *pgxpool.Pool }
+type TerminalRepo struct{ pool pgxPool }
 
-func NewTerminalRepo(pool *pgxpool.Pool) *TerminalRepo {
+func NewTerminalRepo(pool pgxPool) *TerminalRepo {
 	return &TerminalRepo{pool: pool}
 }
 

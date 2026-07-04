@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"github.com/juantevez/go-posnet/context/terminal-gateway/application/query"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/service"
 	"github.com/juantevez/go-posnet/pkg/domain"
+	pkgerrors "github.com/juantevez/go-posnet/pkg/errors"
 	"github.com/juantevez/go-posnet/pkg/observability"
 	tgv1 "github.com/juantevez/go-posnet/pkg/proto/terminalgateway/v1"
 )
@@ -70,12 +72,17 @@ func (s *TerminalGatewayServer) SendReceipt(
 		return nil, status.Errorf(codes.InvalidArgument, "invalid transaction_id: %v", err)
 	}
 
-	session, err := s.queryHandler.GetSessionStatus(ctx, txID)
-	if err != nil || session == nil {
-		return &tgv1.SendReceiptResponse{
-			Delivered:   false,
-			ErrorReason: "SESSION_NOT_FOUND",
-		}, nil
+	_, err = s.queryHandler.GetSessionStatus(ctx, txID)
+	if err != nil {
+		var notFound *pkgerrors.NotFoundError
+		if errors.As(err, &notFound) {
+			return &tgv1.SendReceiptResponse{
+				Delivered:   false,
+				ErrorReason: "SESSION_NOT_FOUND",
+			}, nil
+		}
+		observability.RecordError(ctx, err)
+		return nil, status.Error(codes.Internal, "internal error")
 	}
 
 	slog.InfoContext(ctx, "receipt sent to terminal",
@@ -117,8 +124,8 @@ func (s *TerminalGatewayServer) GetTerminalStatus(
 	}
 
 	return &tgv1.GetTerminalStatusResponse{
-		TerminalId: req.TerminalId,
-		Status:     tgv1.TerminalConnectionStatus_TERMINAL_CONNECTION_STATUS_CONNECTED,
+		TerminalId:     req.TerminalId,
+		Status:         tgv1.TerminalConnectionStatus_TERMINAL_CONNECTION_STATUS_CONNECTED,
 		MerchantId:     activeSession.MerchantID,
 		ConnectedSince: activeSession.CreatedAt,
 	}, nil

@@ -3,19 +3,17 @@ package http
 import (
 	"net/http"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/application/port"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/application/query"
-	"github.com/juantevez/go-posnet/pkg/natsutil"
 	"github.com/juantevez/go-posnet/pkg/observability"
+	"github.com/juantevez/go-posnet/pkg/pgutil"
 )
 
 // NewRouter construye el mux HTTP del BC Terminal Gateway con middlewares aplicados.
 func NewRouter(
 	sessionService port.SessionService,
 	queryHandler *query.SessionQueryHandler,
-	natsPub *natsutil.Publisher,
-	pool *pgxpool.Pool,
+	pool pgutil.PgxPool,
 ) http.Handler {
 	mux := http.NewServeMux()
 
@@ -24,7 +22,7 @@ func NewRouter(
 	h.RegisterRoutes(mux)
 
 	// Rutas del flujo QR — simulador POSNET
-	qr := NewQRHandler(sessionService, queryHandler, natsPub)
+	qr := NewQRHandler(sessionService, queryHandler)
 	qr.RegisterQRRoutes(mux)
 
 	mux.Handle("GET /metrics", metricsHandler())

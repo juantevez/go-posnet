@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/application/port"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/application/query"
 	"github.com/juantevez/go-posnet/pkg/domain"
@@ -20,13 +19,13 @@ import (
 type Handler struct {
 	sessionService port.SessionService
 	queryHandler   *query.SessionQueryHandler
-	pool           *pgxpool.Pool
+	pool           pgutil.PgxPool
 }
 
 func NewHandler(
 	sessionService port.SessionService,
 	queryHandler *query.SessionQueryHandler,
-	pool *pgxpool.Pool,
+	pool pgutil.PgxPool,
 ) *Handler {
 	return &Handler{
 		sessionService: sessionService,

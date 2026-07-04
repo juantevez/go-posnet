@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/application/port"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/aggregate"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/repository"
@@ -31,7 +30,7 @@ type SessionHandler struct {
 	publisher    service.EventPublisher
 	idempotency  *natsutil.IdempotencyStore
 	outbox       *outbox.Store
-	pool         *pgxpool.Pool
+	pool         pgutil.PgxPool
 }
 
 // NewSessionHandler construye el handler con todas sus dependencias.
@@ -42,7 +41,7 @@ func NewSessionHandler(
 	publisher service.EventPublisher,
 	idempotency *natsutil.IdempotencyStore,
 	outboxStore *outbox.Store,
-	pool *pgxpool.Pool,
+	pool pgutil.PgxPool,
 ) *SessionHandler {
 	return &SessionHandler{
 		sessionRepo:  sessionRepo,
@@ -292,10 +291,17 @@ func (h *SessionHandler) CancelSession(ctx context.Context, cmd port.CancelSessi
 	if err != nil {
 		return pkgerrors.NewValidationError("invalid transaction_id")
 	}
+	terminalID, err := domain.ParseTerminalID(cmd.TerminalID)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid terminal_id")
+	}
 
 	session, err := h.sessionRepo.FindByID(ctx, txID)
 	if err != nil {
 		return fmt.Errorf("CancelSession: find session: %w", err)
+	}
+	if !session.TerminalID().Equals(terminalID) {
+		return pkgerrors.NewValidationError("terminal is not authorized to cancel this session")
 	}
 
 	if err := session.Cancel(); err != nil {
@@ -338,12 +344,14 @@ func (h *SessionHandler) RequestReversal(ctx context.Context, cmd port.RequestRe
 	if err != nil {
 		return pkgerrors.NewValidationError("invalid terminal_id")
 	}
-	_ = terminalID
 
 	// Cargar la sesión original para tener el MerchantID y monto
 	session, err := h.sessionRepo.FindByID(ctx, origTxID)
 	if err != nil {
 		return fmt.Errorf("RequestReversal: find original session: %w", err)
+	}
+	if !session.TerminalID().Equals(terminalID) {
+		return pkgerrors.NewValidationError("terminal is not authorized to reverse this transaction")
 	}
 
 	return h.publisher.PublishReversalRequested(ctx, origTxID, session)
