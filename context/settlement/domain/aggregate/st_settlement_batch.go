@@ -146,10 +146,17 @@ func (b *SettlementBatch) Close(terminalCount int, terminalAmount int64) error {
 	backendTotalCount := backendPurchaseCount + backendReversalCount
 	backendTotalAmount := backendPurchaseAmount - backendReversalAmount
 
-	// Detectar discrepancias
+	// Detectar discrepancias. countDiff mide el desajuste de cantidad; un
+	// desajuste de monto por sí solo también debe contar como discrepancia
+	// aunque countDiff sea 0, o quedaría enmascarado para el caller que
+	// solo chequea Discrepancies() > 0.
+	countDiff := abs(terminalCount - backendTotalCount)
 	b.discrepancies = 0
 	if terminalCount != backendTotalCount || terminalAmount != backendTotalAmount {
-		b.discrepancies = abs(terminalCount - backendTotalCount)
+		b.discrepancies = countDiff
+		if b.discrepancies == 0 {
+			b.discrepancies = 1
+		}
 	}
 
 	// Construir el summary

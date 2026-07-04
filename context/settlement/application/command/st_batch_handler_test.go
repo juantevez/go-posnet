@@ -1,0 +1,658 @@
+package command_test
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/juantevez/go-posnet/context/settlement/application/command"
+	"github.com/juantevez/go-posnet/context/settlement/application/port"
+	"github.com/juantevez/go-posnet/context/settlement/domain/aggregate"
+	"github.com/juantevez/go-posnet/context/settlement/domain/repository"
+	"github.com/juantevez/go-posnet/context/settlement/domain/service"
+	"github.com/juantevez/go-posnet/context/settlement/domain/valueobject"
+	"github.com/juantevez/go-posnet/pkg/domain"
+	pkgerrors "github.com/juantevez/go-posnet/pkg/errors"
+	"github.com/juantevez/go-posnet/pkg/natsutil"
+	"github.com/juantevez/go-posnet/pkg/pgutil"
+	"github.com/pashagolub/pgxmock/v4"
+)
+
+func newHandler(pool pgutil.PgxPool, batchRepo repository.SettlementBatchRepository, publisher service.EventPublisher, processor service.SettlementProcessor) *command.BatchHandler {
+	return command.NewBatchHandler(batchRepo, publisher, processor, natsutil.NewIdempotencyStore(nil, idempotencySchema), pool, 2.5)
+}
+
+// ─── RegisterApproval ──────────────────────────────────────────────────────────
+
+func validApprovalCmd() port.RegisterApprovalCommand {
+	return port.RegisterApprovalCommand{
+		EventID:       "evt-1",
+		TransactionID: domain.NewTransactionID().String(),
+		TerminalID:    domain.NewTerminalID().String(),
+		MerchantID:    domain.NewMerchantID().String(),
+		AmountCents:   1000,
+		Currency:      "ARS",
+		AuthorizedAt:  time.Now().UTC().Format(time.RFC3339),
+	}
+}
+
+func TestRegisterApproval_ValidationErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		mut  func(*port.RegisterApprovalCommand)
+	}{
+		{"invalid terminal_id", func(c *port.RegisterApprovalCommand) { c.TerminalID = "not-a-uuid" }},
+		{"invalid merchant_id", func(c *port.RegisterApprovalCommand) { c.MerchantID = "not-a-uuid" }},
+		{"invalid transaction_id", func(c *port.RegisterApprovalCommand) { c.TransactionID = "not-a-uuid" }},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			pool := newMockPool(t)
+			h := newHandler(pool, &fakeBatchRepo{}, &fakePublisher{}, &fakeProcessor{})
+			cmd := validApprovalCmd()
+			tc.mut(&cmd)
+
+			err := h.RegisterApproval(context.Background(), cmd)
+			var ve *pkgerrors.ValidationError
+			if !errors.As(err, &ve) {
+				t.Fatalf("error type = %T, want *pkgerrors.ValidationError", err)
+			}
+		})
+	}
+}
+
+func TestRegisterApproval_BeginTxError(t *testing.T) {
+	pool := newMockPool(t)
+	pool.ExpectBeginTx(pgx.TxOptions{IsoLevel: pgx.ReadCommitted}).WillReturnError(errors.New("connection reset"))
+
+	h := newHandler(pool, &fakeBatchRepo{}, &fakePublisher{}, &fakeProcessor{})
+	err := h.RegisterApproval(context.Background(), validApprovalCmd())
+	if err == nil || !strings.Contains(err.Error(), "RegisterApproval") {
+		t.Fatalf("error = %v, want it to mention RegisterApproval", err)
+	}
+}
+
+func TestRegisterApproval_ClaimExecError(t *testing.T) {
+	pool := newMockPool(t)
+	pool.ExpectBeginTx(pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
+	pool.ExpectExec("INSERT INTO " + idempotencySchema + ".processed_events").
+		WithArgs(pgxmock.AnyArg()).
+		WillReturnError(errors.New("constraint violation"))
+	pool.ExpectRollback()
+
+	h := newHandler(pool, &fakeBatchRepo{}, &fakePublisher{}, &fakeProcessor{})
+	err := h.RegisterApproval(context.Background(), validApprovalCmd())
+	if err == nil || !strings.Contains(err.Error(), "RegisterApproval") {
+		t.Fatalf("error = %v, want it to mention RegisterApproval", err)
+	}
+}
+
+func TestRegisterApproval_DuplicateEventSkipsPersist(t *testing.T) {
+	pool := newMockPool(t)
+	expectClaimed(pool, 0) // duplicado
+
+	repo := &fakeBatchRepo{}
+	h := newHandler(pool, repo, &fakePublisher{}, &fakeProcessor{})
+
+	if err := h.RegisterApproval(context.Background(), validApprovalCmd()); err != nil {
+		t.Fatalf("RegisterApproval() error = %v", err)
+	}
+	if repo.saveCallCount != 0 {
+		t.Errorf("Save call count = %d, want 0 for a duplicate event", repo.saveCallCount)
+	}
+}
+
+func TestRegisterApproval_FindOrCreateOpenError(t *testing.T) {
+	pool := newMockPool(t)
+	expectClaimedThenFail(pool, 1)
+
+	repo := &fakeBatchRepo{findOrCreateErr: errors.New("connection reset")}
+	h := newHandler(pool, repo, &fakePublisher{}, &fakeProcessor{})
+
+	err := h.RegisterApproval(context.Background(), validApprovalCmd())
+	if err == nil || !strings.Contains(err.Error(), "find or create batch") {
+		t.Fatalf("error = %v, want it to mention find or create batch", err)
+	}
+}
+
+func TestRegisterApproval_AddTransactionError(t *testing.T) {
+	pool := newMockPool(t)
+	expectClaimedThenFail(pool, 1)
+
+	batch := newOpenBatch(t, domain.NewTerminalID(), domain.NewMerchantID())
+	repo := &fakeBatchRepo{findOrCreateResult: batch}
+	h := newHandler(pool, repo, &fakePublisher{}, &fakeProcessor{})
+
+	cmd := validApprovalCmd()
+	cmd.AmountCents = 0 // entity.NewBatchTransaction rechaza monto <= 0
+
+	err := h.RegisterApproval(context.Background(), cmd)
+	if err == nil || !strings.Contains(err.Error(), "add transaction") {
+		t.Fatalf("error = %v, want it to mention add transaction", err)
+	}
+}
+
+func TestRegisterApproval_SaveError(t *testing.T) {
+	pool := newMockPool(t)
+	expectClaimedThenFail(pool, 1)
+
+	batch := newOpenBatch(t, domain.NewTerminalID(), domain.NewMerchantID())
+	repo := &fakeBatchRepo{findOrCreateResult: batch, saveErr: errors.New("connection reset")}
+	h := newHandler(pool, repo, &fakePublisher{}, &fakeProcessor{})
+
+	err := h.RegisterApproval(context.Background(), validApprovalCmd())
+	if err == nil || !strings.Contains(err.Error(), "RegisterApproval") {
+		t.Fatalf("error = %v, want it to mention RegisterApproval", err)
+	}
+}
+
+func TestRegisterApproval_Success(t *testing.T) {
+	pool := newMockPool(t)
+	expectClaimed(pool, 1)
+
+	batch := newOpenBatch(t, domain.NewTerminalID(), domain.NewMerchantID())
+	repo := &fakeBatchRepo{findOrCreateResult: batch}
+	h := newHandler(pool, repo, &fakePublisher{}, &fakeProcessor{})
+
+	if err := h.RegisterApproval(context.Background(), validApprovalCmd()); err != nil {
+		t.Fatalf("RegisterApproval() error = %v", err)
+	}
+
+	saved := repo.lastSaved()
+	if saved == nil || len(saved.Transactions()) != 1 {
+		t.Fatalf("saved batch transactions = %+v, want 1", saved)
+	}
+	if saved.Transactions()[0].Type() != valueobject.BatchTxPurchase {
+		t.Errorf("Type() = %v, want %v", saved.Transactions()[0].Type(), valueobject.BatchTxPurchase)
+	}
+}
+
+func TestRegisterApproval_InvalidAuthorizedAtFallsBackToNow(t *testing.T) {
+	pool := newMockPool(t)
+	expectClaimed(pool, 1)
+
+	batch := newOpenBatch(t, domain.NewTerminalID(), domain.NewMerchantID())
+	repo := &fakeBatchRepo{findOrCreateResult: batch}
+	h := newHandler(pool, repo, &fakePublisher{}, &fakeProcessor{})
+
+	cmd := validApprovalCmd()
+	cmd.AuthorizedAt = "not-a-date"
+
+	if err := h.RegisterApproval(context.Background(), cmd); err != nil {
+		t.Fatalf("RegisterApproval() error = %v, want nil (falls back to time.Now())", err)
+	}
+}
+
+// ─── RegisterReversal ──────────────────────────────────────────────────────────
+
+func validReversalCmd() port.RegisterReversalCommand {
+	return port.RegisterReversalCommand{
+		EventID:               "evt-2",
+		OriginalTransactionID: domain.NewTransactionID().String(),
+		TerminalID:            domain.NewTerminalID().String(),
+		MerchantID:            domain.NewMerchantID().String(),
+		AmountCents:           1000,
+		Currency:              "ARS",
+		CompletedAt:           time.Now().UTC().Format(time.RFC3339),
+	}
+}
+
+func TestRegisterReversal_ValidationErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		mut  func(*port.RegisterReversalCommand)
+	}{
+		{"invalid terminal_id", func(c *port.RegisterReversalCommand) { c.TerminalID = "not-a-uuid" }},
+		{"invalid merchant_id", func(c *port.RegisterReversalCommand) { c.MerchantID = "not-a-uuid" }},
+		{"invalid original_transaction_id", func(c *port.RegisterReversalCommand) { c.OriginalTransactionID = "not-a-uuid" }},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			pool := newMockPool(t)
+			h := newHandler(pool, &fakeBatchRepo{}, &fakePublisher{}, &fakeProcessor{})
+			cmd := validReversalCmd()
+			tc.mut(&cmd)
+
+			err := h.RegisterReversal(context.Background(), cmd)
+			var ve *pkgerrors.ValidationError
+			if !errors.As(err, &ve) {
+				t.Fatalf("error type = %T, want *pkgerrors.ValidationError", err)
+			}
+		})
+	}
+}
+
+func TestRegisterReversal_BeginTxError(t *testing.T) {
+	pool := newMockPool(t)
+	pool.ExpectBeginTx(pgx.TxOptions{IsoLevel: pgx.ReadCommitted}).WillReturnError(errors.New("connection reset"))
+
+	h := newHandler(pool, &fakeBatchRepo{}, &fakePublisher{}, &fakeProcessor{})
+	if err := h.RegisterReversal(context.Background(), validReversalCmd()); err == nil {
+		t.Fatal("RegisterReversal() error = nil, want an error")
+	}
+}
+
+func TestRegisterReversal_ClaimExecError(t *testing.T) {
+	pool := newMockPool(t)
+	pool.ExpectBeginTx(pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
+	pool.ExpectExec("INSERT INTO " + idempotencySchema + ".processed_events").
+		WithArgs(pgxmock.AnyArg()).
+		WillReturnError(errors.New("constraint violation"))
+	pool.ExpectRollback()
+
+	h := newHandler(pool, &fakeBatchRepo{}, &fakePublisher{}, &fakeProcessor{})
+	if err := h.RegisterReversal(context.Background(), validReversalCmd()); err == nil {
+		t.Fatal("RegisterReversal() error = nil, want an error")
+	}
+}
+
+func TestRegisterReversal_DuplicateEventSkipsPersist(t *testing.T) {
+	pool := newMockPool(t)
+	expectClaimed(pool, 0)
+
+	repo := &fakeBatchRepo{}
+	h := newHandler(pool, repo, &fakePublisher{}, &fakeProcessor{})
+
+	if err := h.RegisterReversal(context.Background(), validReversalCmd()); err != nil {
+		t.Fatalf("RegisterReversal() error = %v", err)
+	}
+	if repo.saveCallCount != 0 {
+		t.Errorf("Save call count = %d, want 0 for a duplicate event", repo.saveCallCount)
+	}
+}
+
+func TestRegisterReversal_FindOrCreateOpenError(t *testing.T) {
+	pool := newMockPool(t)
+	expectClaimedThenFail(pool, 1)
+
+	repo := &fakeBatchRepo{findOrCreateErr: errors.New("connection reset")}
+	h := newHandler(pool, repo, &fakePublisher{}, &fakeProcessor{})
+
+	err := h.RegisterReversal(context.Background(), validReversalCmd())
+	if err == nil || !strings.Contains(err.Error(), "find or create batch") {
+		t.Fatalf("error = %v, want it to mention find or create batch", err)
+	}
+}
+
+func TestRegisterReversal_RemoveTransactionError(t *testing.T) {
+	pool := newMockPool(t)
+	expectClaimedThenFail(pool, 1)
+
+	// Un batch que no está OPEN no acepta RemoveTransaction.
+	batch := aggregate.Reconstitute(aggregate.ReconstituteParams{
+		ID:         "batch-1",
+		TerminalID: domain.NewTerminalID(),
+		MerchantID: domain.NewMerchantID(),
+		BatchDate:  time.Now(),
+		State:      valueobject.BatchStateClosed,
+		Currency:   "ARS",
+		CreatedAt:  time.Now(),
+	})
+	repo := &fakeBatchRepo{findOrCreateResult: batch}
+	h := newHandler(pool, repo, &fakePublisher{}, &fakeProcessor{})
+
+	err := h.RegisterReversal(context.Background(), validReversalCmd())
+	if err == nil || !strings.Contains(err.Error(), "remove transaction") {
+		t.Fatalf("error = %v, want it to mention remove transaction", err)
+	}
+}
+
+func TestRegisterReversal_SaveError(t *testing.T) {
+	pool := newMockPool(t)
+	expectClaimedThenFail(pool, 1)
+
+	batch := newOpenBatch(t, domain.NewTerminalID(), domain.NewMerchantID())
+	repo := &fakeBatchRepo{findOrCreateResult: batch, saveErr: errors.New("connection reset")}
+	h := newHandler(pool, repo, &fakePublisher{}, &fakeProcessor{})
+
+	if err := h.RegisterReversal(context.Background(), validReversalCmd()); err == nil {
+		t.Fatal("RegisterReversal() error = nil, want it to propagate the Save error")
+	}
+}
+
+func TestRegisterReversal_Success(t *testing.T) {
+	pool := newMockPool(t)
+	expectClaimed(pool, 1)
+
+	batch := newOpenBatch(t, domain.NewTerminalID(), domain.NewMerchantID())
+	repo := &fakeBatchRepo{findOrCreateResult: batch}
+	h := newHandler(pool, repo, &fakePublisher{}, &fakeProcessor{})
+
+	if err := h.RegisterReversal(context.Background(), validReversalCmd()); err != nil {
+		t.Fatalf("RegisterReversal() error = %v", err)
+	}
+
+	saved := repo.lastSaved()
+	if saved == nil || len(saved.Transactions()) != 1 {
+		t.Fatalf("saved batch transactions = %+v, want 1", saved)
+	}
+	if saved.Transactions()[0].Type() != valueobject.BatchTxReversal {
+		t.Errorf("Type() = %v, want %v", saved.Transactions()[0].Type(), valueobject.BatchTxReversal)
+	}
+}
+
+func TestRegisterReversal_InvalidCompletedAtFallsBackToNow(t *testing.T) {
+	pool := newMockPool(t)
+	expectClaimed(pool, 1)
+
+	batch := newOpenBatch(t, domain.NewTerminalID(), domain.NewMerchantID())
+	repo := &fakeBatchRepo{findOrCreateResult: batch}
+	h := newHandler(pool, repo, &fakePublisher{}, &fakeProcessor{})
+
+	cmd := validReversalCmd()
+	cmd.CompletedAt = "not-a-date"
+
+	if err := h.RegisterReversal(context.Background(), cmd); err != nil {
+		t.Fatalf("RegisterReversal() error = %v, want nil (falls back to time.Now())", err)
+	}
+}
+
+// ─── ProcessBatchClose ──────────────────────────────────────────────────────────
+
+func validProcessCloseCmd() port.ProcessBatchCloseCommand {
+	return port.ProcessBatchCloseCommand{
+		EventID:        "evt-3",
+		TerminalID:     domain.NewTerminalID().String(),
+		MerchantID:     domain.NewMerchantID().String(),
+		BatchDate:      "2026-01-15",
+		TerminalCount:  2,
+		TerminalAmount: 3000,
+		Currency:       "ARS",
+	}
+}
+
+// closableFoundBatch produce un batch OPEN con 2 compras de 1000+2000 (total 3000,
+// count 2) — coincide con validProcessCloseCmd() por defecto (sin discrepancias).
+func closableFoundBatch(t *testing.T) *aggregate.SettlementBatch {
+	t.Helper()
+	b := newOpenBatch(t, domain.NewTerminalID(), domain.NewMerchantID())
+	if err := b.AddTransaction(domain.NewTransactionID(), 1000, valueobject.BatchTxPurchase); err != nil {
+		t.Fatalf("AddTransaction() error = %v", err)
+	}
+	if err := b.AddTransaction(domain.NewTransactionID(), 2000, valueobject.BatchTxPurchase); err != nil {
+		t.Fatalf("AddTransaction() error = %v", err)
+	}
+	return b
+}
+
+func TestProcessBatchClose_InvalidTerminalID(t *testing.T) {
+	h := newHandler(newMockPool(t), &fakeBatchRepo{}, &fakePublisher{}, &fakeProcessor{})
+	cmd := validProcessCloseCmd()
+	cmd.TerminalID = "not-a-uuid"
+
+	var ve *pkgerrors.ValidationError
+	err := h.ProcessBatchClose(context.Background(), cmd)
+	if !errors.As(err, &ve) {
+		t.Fatalf("error type = %T, want *pkgerrors.ValidationError", err)
+	}
+}
+
+func TestProcessBatchClose_FindOpenByTerminalError(t *testing.T) {
+	repo := &fakeBatchRepo{findOpenErr: errors.New("connection reset")}
+	h := newHandler(newMockPool(t), repo, &fakePublisher{}, &fakeProcessor{})
+
+	err := h.ProcessBatchClose(context.Background(), validProcessCloseCmd())
+	if err == nil || !strings.Contains(err.Error(), "find open batch") {
+		t.Fatalf("error = %v, want it to mention find open batch", err)
+	}
+}
+
+func TestProcessBatchClose_NoOpenBatch(t *testing.T) {
+	repo := &fakeBatchRepo{findOpenResult: nil}
+	h := newHandler(newMockPool(t), repo, &fakePublisher{}, &fakeProcessor{})
+
+	if err := h.ProcessBatchClose(context.Background(), validProcessCloseCmd()); err != nil {
+		t.Fatalf("ProcessBatchClose() error = %v, want nil when there's nothing to close", err)
+	}
+	if repo.saveCallCount != 0 {
+		t.Errorf("Save call count = %d, want 0", repo.saveCallCount)
+	}
+}
+
+func TestProcessBatchClose_RequestCloseError(t *testing.T) {
+	// Un batch que no está OPEN no puede transicionar a PENDING_CLOSE.
+	batch := aggregate.Reconstitute(aggregate.ReconstituteParams{
+		ID:         "batch-1",
+		TerminalID: domain.NewTerminalID(),
+		MerchantID: domain.NewMerchantID(),
+		BatchDate:  time.Now(),
+		State:      valueobject.BatchStateClosed,
+		Currency:   "ARS",
+		CreatedAt:  time.Now(),
+	})
+	repo := &fakeBatchRepo{findOpenResult: batch}
+	h := newHandler(newMockPool(t), repo, &fakePublisher{}, &fakeProcessor{})
+
+	err := h.ProcessBatchClose(context.Background(), validProcessCloseCmd())
+	if err == nil || !strings.Contains(err.Error(), "request close") {
+		t.Fatalf("error = %v, want it to mention request close", err)
+	}
+}
+
+func TestProcessBatchClose_BeginTxError(t *testing.T) {
+	batch := closableFoundBatch(t)
+	repo := &fakeBatchRepo{findOpenResult: batch}
+	pool := newMockPool(t)
+	pool.ExpectBeginTx(pgx.TxOptions{IsoLevel: pgx.ReadCommitted}).WillReturnError(errors.New("connection reset"))
+
+	h := newHandler(pool, repo, &fakePublisher{}, &fakeProcessor{})
+	if err := h.ProcessBatchClose(context.Background(), validProcessCloseCmd()); err == nil {
+		t.Fatal("ProcessBatchClose() error = nil, want an error")
+	}
+}
+
+func TestProcessBatchClose_ClaimExecError(t *testing.T) {
+	batch := closableFoundBatch(t)
+	repo := &fakeBatchRepo{findOpenResult: batch}
+	pool := newMockPool(t)
+	pool.ExpectBeginTx(pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
+	pool.ExpectExec("INSERT INTO " + idempotencySchema + ".processed_events").
+		WithArgs(pgxmock.AnyArg()).
+		WillReturnError(errors.New("constraint violation"))
+	pool.ExpectRollback()
+
+	h := newHandler(pool, repo, &fakePublisher{}, &fakeProcessor{})
+	err := h.ProcessBatchClose(context.Background(), validProcessCloseCmd())
+	if err == nil || !strings.Contains(err.Error(), "ProcessBatchClose") {
+		t.Fatalf("error = %v, want it to mention ProcessBatchClose", err)
+	}
+}
+
+func TestProcessBatchClose_DuplicateEventSkipsPersistAndPublish(t *testing.T) {
+	batch := closableFoundBatch(t)
+	repo := &fakeBatchRepo{findOpenResult: batch}
+	pool := newMockPool(t)
+	expectClaimed(pool, 0)
+	publisher := &fakePublisher{}
+	processor := &fakeProcessor{}
+
+	h := newHandler(pool, repo, publisher, processor)
+	if err := h.ProcessBatchClose(context.Background(), validProcessCloseCmd()); err != nil {
+		t.Fatalf("ProcessBatchClose() error = %v", err)
+	}
+	if repo.saveCallCount != 0 {
+		t.Errorf("Save call count = %d, want 0 for a duplicate event", repo.saveCallCount)
+	}
+	if publisher.publishBatchClosedCalls != 0 {
+		t.Errorf("PublishBatchClosed calls = %d, want 0", publisher.publishBatchClosedCalls)
+	}
+	if processor.calls != 0 {
+		t.Errorf("processor.Submit calls = %d, want 0", processor.calls)
+	}
+}
+
+func TestProcessBatchClose_SaveError(t *testing.T) {
+	batch := closableFoundBatch(t)
+	repo := &fakeBatchRepo{findOpenResult: batch, saveErr: errors.New("connection reset")}
+	pool := newMockPool(t)
+	expectClaimedThenFail(pool, 1)
+
+	h := newHandler(pool, repo, &fakePublisher{}, &fakeProcessor{})
+	if err := h.ProcessBatchClose(context.Background(), validProcessCloseCmd()); err == nil {
+		t.Fatal("ProcessBatchClose() error = nil, want it to propagate the Save error")
+	}
+}
+
+func TestProcessBatchClose_NoDiscrepancy_SubmitsToProcessor(t *testing.T) {
+	batch := closableFoundBatch(t) // total 3000/2 tx, matches validProcessCloseCmd()
+	repo := &fakeBatchRepo{findOpenResult: batch}
+	pool := newMockPool(t)
+	expectClaimed(pool, 1)
+	publisher := &fakePublisher{}
+	processor := &fakeProcessor{confirmationID: "conf-123"}
+
+	h := newHandler(pool, repo, publisher, processor)
+	if err := h.ProcessBatchClose(context.Background(), validProcessCloseCmd()); err != nil {
+		t.Fatalf("ProcessBatchClose() error = %v", err)
+	}
+
+	if publisher.publishBatchClosedCalls != 1 {
+		t.Errorf("PublishBatchClosed calls = %d, want 1", publisher.publishBatchClosedCalls)
+	}
+	if processor.calls != 1 {
+		t.Errorf("processor.Submit calls = %d, want 1", processor.calls)
+	}
+	if repo.saveCallCount != 2 {
+		t.Fatalf("Save call count = %d, want 2 (close + submit)", repo.saveCallCount)
+	}
+	saved := repo.lastSaved()
+	if saved.State() != valueobject.BatchStateSubmitted {
+		t.Errorf("State() = %v, want %v", saved.State(), valueobject.BatchStateSubmitted)
+	}
+	if saved.SubmittedAt() == nil {
+		t.Error("SubmittedAt() is nil, want it set after a successful submit")
+	}
+}
+
+func TestProcessBatchClose_PublishErrorIsNonFatal(t *testing.T) {
+	batch := closableFoundBatch(t)
+	repo := &fakeBatchRepo{findOpenResult: batch}
+	pool := newMockPool(t)
+	expectClaimed(pool, 1)
+	publisher := &fakePublisher{publishBatchClosedErr: errors.New("nats unavailable")}
+	processor := &fakeProcessor{confirmationID: "conf-123"}
+
+	h := newHandler(pool, repo, publisher, processor)
+	if err := h.ProcessBatchClose(context.Background(), validProcessCloseCmd()); err != nil {
+		t.Fatalf("ProcessBatchClose() error = %v, want nil (publish errors are logged only)", err)
+	}
+	if processor.calls != 1 {
+		t.Errorf("processor.Submit calls = %d, want 1 (should still run after a publish failure)", processor.calls)
+	}
+}
+
+func TestProcessBatchClose_WithDiscrepancy_MarksDisputedAndSkipsSubmit(t *testing.T) {
+	batch := closableFoundBatch(t) // backend total = 3000/2 tx
+	repo := &fakeBatchRepo{findOpenResult: batch}
+	pool := newMockPool(t)
+	expectClaimed(pool, 1)
+	publisher := &fakePublisher{}
+	processor := &fakeProcessor{}
+
+	h := newHandler(pool, repo, publisher, processor)
+	cmd := validProcessCloseCmd()
+	cmd.TerminalCount = 5 // no coincide con el backend (2) → discrepancia
+
+	if err := h.ProcessBatchClose(context.Background(), cmd); err != nil {
+		t.Fatalf("ProcessBatchClose() error = %v", err)
+	}
+
+	if processor.calls != 0 {
+		t.Errorf("processor.Submit calls = %d, want 0 (no debe enviarse un batch en disputa)", processor.calls)
+	}
+	if repo.saveCallCount != 2 {
+		t.Fatalf("Save call count = %d, want 2 (close + mark disputed)", repo.saveCallCount)
+	}
+	saved := repo.lastSaved()
+	if saved.State() != valueobject.BatchStateDisputed {
+		t.Errorf("State() = %v, want %v", saved.State(), valueobject.BatchStateDisputed)
+	}
+}
+
+func TestProcessBatchClose_MarkDisputedSaveError(t *testing.T) {
+	batch := closableFoundBatch(t)
+	repo := &fakeBatchRepoSaveErrOnCall{fakeBatchRepo: fakeBatchRepo{findOpenResult: batch}, errOnCall: 2}
+	pool := newMockPool(t)
+	expectClaimed(pool, 1)
+
+	h := newHandler(pool, repo, &fakePublisher{}, &fakeProcessor{})
+	cmd := validProcessCloseCmd()
+	cmd.TerminalCount = 5
+
+	if err := h.ProcessBatchClose(context.Background(), cmd); err == nil {
+		t.Fatal("ProcessBatchClose() error = nil, want it to propagate the second Save error")
+	}
+}
+
+func TestProcessBatchClose_SubmitSaveError(t *testing.T) {
+	batch := closableFoundBatch(t) // sin discrepancias — sigue a submitBatch
+	repo := &fakeBatchRepoSaveErrOnCall{fakeBatchRepo: fakeBatchRepo{findOpenResult: batch}, errOnCall: 2}
+	pool := newMockPool(t)
+	expectClaimed(pool, 1)
+	processor := &fakeProcessor{confirmationID: "conf-123"}
+
+	h := newHandler(pool, repo, &fakePublisher{}, processor)
+	err := h.ProcessBatchClose(context.Background(), validProcessCloseCmd())
+	if err == nil || !strings.Contains(err.Error(), "submitBatch: save") {
+		t.Fatalf("error = %v, want it to mention submitBatch: save", err)
+	}
+	if processor.calls != 1 {
+		t.Errorf("processor.Submit calls = %d, want 1 (debe intentarse antes de fallar al guardar)", processor.calls)
+	}
+}
+
+func TestProcessBatchClose_ProcessorSubmitError(t *testing.T) {
+	batch := closableFoundBatch(t)
+	repo := &fakeBatchRepo{findOpenResult: batch}
+	pool := newMockPool(t)
+	expectClaimed(pool, 1)
+	processor := &fakeProcessor{err: errors.New("processor unavailable")}
+
+	h := newHandler(pool, repo, &fakePublisher{}, processor)
+	err := h.ProcessBatchClose(context.Background(), validProcessCloseCmd())
+	if err == nil || !strings.Contains(err.Error(), "processor submit") {
+		t.Fatalf("error = %v, want it to mention processor submit", err)
+	}
+	// El batch quedó CLOSED (guardado antes del intento de envío) — no SUBMITTED,
+	// porque el envío al procesador falló y no se debe marcar como enviado.
+	saved := repo.lastSaved()
+	if saved.State() != valueobject.BatchStateClosed {
+		t.Errorf("State() = %v, want %v (el envío al procesador falló)", saved.State(), valueobject.BatchStateClosed)
+	}
+}
+
+func TestProcessBatchClose_InvalidBatchDateFallsBackToNow(t *testing.T) {
+	batch := closableFoundBatch(t)
+	repo := &fakeBatchRepo{findOpenResult: batch}
+	pool := newMockPool(t)
+	expectClaimed(pool, 1)
+
+	h := newHandler(pool, repo, &fakePublisher{}, &fakeProcessor{confirmationID: "conf-1"})
+	cmd := validProcessCloseCmd()
+	cmd.BatchDate = "not-a-date"
+
+	if err := h.ProcessBatchClose(context.Background(), cmd); err != nil {
+		t.Fatalf("ProcessBatchClose() error = %v, want nil (falls back to time.Now())", err)
+	}
+}
+
+// fakeBatchRepoSaveErrOnCall falla únicamente en la llamada N a Save (1-based),
+// para poder testear un error en un Save posterior sin impedir los anteriores
+// (p.ej. el Save del cierre debe tener éxito para llegar al de MarkDisputed/submit).
+type fakeBatchRepoSaveErrOnCall struct {
+	fakeBatchRepo
+	errOnCall int
+}
+
+func (f *fakeBatchRepoSaveErrOnCall) Save(ctx context.Context, b *aggregate.SettlementBatch) error {
+	_ = f.fakeBatchRepo.Save(ctx, b)
+	if f.fakeBatchRepo.saveCallCount == f.errOnCall {
+		return errors.New("connection reset")
+	}
+	return nil
+}

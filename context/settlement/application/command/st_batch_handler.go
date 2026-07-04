@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/juantevez/go-posnet/context/settlement/application/port"
+	"github.com/juantevez/go-posnet/context/settlement/domain/aggregate"
 	"github.com/juantevez/go-posnet/context/settlement/domain/repository"
 	"github.com/juantevez/go-posnet/context/settlement/domain/service"
 	"github.com/juantevez/go-posnet/context/settlement/domain/valueobject"
@@ -27,7 +27,7 @@ type BatchHandler struct {
 	publisher   service.EventPublisher
 	processor   service.SettlementProcessor
 	idempotency *natsutil.IdempotencyStore
-	pool        *pgxpool.Pool
+	pool        pgutil.PgxPool
 	mdrPercent  float64
 }
 
@@ -36,7 +36,7 @@ func NewBatchHandler(
 	publisher service.EventPublisher,
 	processor service.SettlementProcessor,
 	idempotency *natsutil.IdempotencyStore,
-	pool *pgxpool.Pool,
+	pool pgutil.PgxPool,
 	mdrPercent float64,
 ) *BatchHandler {
 	return &BatchHandler{
@@ -239,24 +239,24 @@ func (h *BatchHandler) ProcessBatchClose(ctx context.Context, cmd port.ProcessBa
 	return h.submitBatch(ctx, batch)
 }
 
-// submitBatch envía el batch al procesador externo y lo marca como SUBMITTED.
-func (h *BatchHandler) submitBatch(ctx context.Context, batch interface {
-	Submit() error
-	MarkSettled() error
-	ID() string
-}) error {
-	// Delegar al aggregate
-	if sb, ok := batch.(interface {
-		Submit() error
-		MarkSettled() error
-		ID() string
-	}); ok {
-		if err := sb.Submit(); err != nil {
-			return fmt.Errorf("submitBatch: %w", err)
-		}
-		observability.FromContext(ctx).Info("batch submitted to processor",
-			slog.String("batch_id", sb.ID()),
-		)
+// submitBatch envía la remesa al procesador externo y, si acepta el envío,
+// transiciona el batch a SUBMITTED y persiste el cambio.
+func (h *BatchHandler) submitBatch(ctx context.Context, batch *aggregate.SettlementBatch) error {
+	confirmationID, err := h.processor.Submit(ctx, batch)
+	if err != nil {
+		return fmt.Errorf("submitBatch: processor submit: %w", err)
 	}
+
+	if err := batch.Submit(); err != nil {
+		return fmt.Errorf("submitBatch: %w", err)
+	}
+	if err := h.batchRepo.Save(ctx, batch); err != nil {
+		return fmt.Errorf("submitBatch: save: %w", err)
+	}
+
+	observability.FromContext(ctx).Info("batch submitted to processor",
+		slog.String("batch_id", batch.ID()),
+		slog.String("confirmation_id", confirmationID),
+	)
 	return nil
 }

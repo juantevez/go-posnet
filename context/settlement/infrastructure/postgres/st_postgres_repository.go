@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/juantevez/go-posnet/context/settlement/domain/aggregate"
 	"github.com/juantevez/go-posnet/context/settlement/domain/entity"
 	"github.com/juantevez/go-posnet/context/settlement/domain/valueobject"
@@ -17,10 +16,19 @@ import (
 	"github.com/juantevez/go-posnet/pkg/pgutil"
 )
 
-// SettlementBatchRepo implementa repository.SettlementBatchRepository.
-type SettlementBatchRepo struct{ pool *pgxpool.Pool }
+// pgxPool es el subconjunto de *pgxpool.Pool que este repositorio necesita:
+// pgutil.PgxPool (BeginTx/Ping, usado por WithReadCommitted/WithSerializable)
+// más QueryRow/Query, usados directamente en las consultas de lectura.
+type pgxPool interface {
+	pgutil.PgxPool
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
 
-func NewSettlementBatchRepo(pool *pgxpool.Pool) *SettlementBatchRepo {
+// SettlementBatchRepo implementa repository.SettlementBatchRepository.
+type SettlementBatchRepo struct{ pool pgxPool }
+
+func NewSettlementBatchRepo(pool pgxPool) *SettlementBatchRepo {
 	return &SettlementBatchRepo{pool: pool}
 }
 

@@ -3,17 +3,17 @@ package http
 import (
 	"net/http"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/juantevez/go-posnet/context/settlement/application/command"
 	"github.com/juantevez/go-posnet/context/settlement/application/query"
 	"github.com/juantevez/go-posnet/pkg/observability"
+	"github.com/juantevez/go-posnet/pkg/pgutil"
 )
 
 // NewRouter construye el mux HTTP del BC Settlement con middlewares aplicados.
 func NewRouter(
 	queryHandler *query.BatchQueryHandler,
 	adminHandler *command.AdminHandler,
-	pool *pgxpool.Pool,
+	pool pgutil.PgxPool,
 ) http.Handler {
 	mux := http.NewServeMux()
 

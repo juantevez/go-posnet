@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/juantevez/go-posnet/context/settlement/application/command"
 	"github.com/juantevez/go-posnet/context/settlement/application/port"
 	"github.com/juantevez/go-posnet/context/settlement/application/query"
@@ -19,13 +18,13 @@ import (
 type Handler struct {
 	queryHandler *query.BatchQueryHandler
 	adminHandler *command.AdminHandler
-	pool         *pgxpool.Pool
+	pool         pgutil.PgxPool
 }
 
 func NewHandler(
 	queryHandler *query.BatchQueryHandler,
 	adminHandler *command.AdminHandler,
-	pool *pgxpool.Pool,
+	pool pgutil.PgxPool,
 ) *Handler {
 	return &Handler{queryHandler: queryHandler, adminHandler: adminHandler, pool: pool}
 }

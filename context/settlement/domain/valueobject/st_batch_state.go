@@ -26,7 +26,7 @@ func (s BatchState) CanTransitionTo(next BatchState) bool {
 	allowed := map[BatchState][]BatchState{
 		BatchStateOpen:         {BatchStatePendingClose},
 		BatchStatePendingClose: {BatchStateClosed, BatchStateDisputed},
-		BatchStateClosed:       {BatchStateSubmitted},
+		BatchStateClosed:       {BatchStateSubmitted, BatchStateDisputed}, // Close() detecta discrepancias y marca disputa de inmediato
 		BatchStateSubmitted:    {BatchStateSettled, BatchStateDisputed},
 		BatchStateDisputed:     {BatchStateSubmitted}, // puede resubmitearse tras resolver
 	}
