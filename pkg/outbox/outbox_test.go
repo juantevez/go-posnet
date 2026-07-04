@@ -59,7 +59,7 @@ func TestInsertTx_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pool.Begin() error = %v", err)
 	}
-	defer tx.Rollback(context.Background())
+	defer func() { _ = tx.Rollback(context.Background()) }()
 
 	store := NewStore("test_schema")
 	if err := store.InsertTx(context.Background(), tx, "posnet.test.event", "evt-1", []byte(`{"a":1}`)); err != nil {
@@ -79,7 +79,7 @@ func TestInsertTx_Error(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pool.Begin() error = %v", err)
 	}
-	defer tx.Rollback(context.Background())
+	defer func() { _ = tx.Rollback(context.Background()) }()
 
 	store := NewStore("test_schema")
 	err = store.InsertTx(context.Background(), tx, "posnet.test.event", "evt-1", []byte(`{}`))

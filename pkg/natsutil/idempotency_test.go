@@ -71,7 +71,7 @@ func TestTryMarkAsProcessed_NewEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pool.Begin() error = %v", err)
 	}
-	defer tx.Rollback(context.Background())
+	defer func() { _ = tx.Rollback(context.Background()) }()
 
 	s := NewIdempotencyStore(pool, "authorization")
 	inserted, err := s.TryMarkAsProcessed(context.Background(), tx, "evt-1")
@@ -95,7 +95,7 @@ func TestTryMarkAsProcessed_DuplicateEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pool.Begin() error = %v", err)
 	}
-	defer tx.Rollback(context.Background())
+	defer func() { _ = tx.Rollback(context.Background()) }()
 
 	s := NewIdempotencyStore(pool, "authorization")
 	inserted, err := s.TryMarkAsProcessed(context.Background(), tx, "evt-1")
@@ -119,7 +119,7 @@ func TestTryMarkAsProcessed_Error(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pool.Begin() error = %v", err)
 	}
-	defer tx.Rollback(context.Background())
+	defer func() { _ = tx.Rollback(context.Background()) }()
 
 	s := NewIdempotencyStore(pool, "authorization")
 	_, err = s.TryMarkAsProcessed(context.Background(), tx, "evt-1")

@@ -105,7 +105,7 @@ func (r *Relay) publishPending(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("outbox relay: begin tx: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	q := fmt.Sprintf(
 		`SELECT id, subject, event_id, payload
