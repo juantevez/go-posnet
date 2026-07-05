@@ -16,7 +16,7 @@ import (
 
 func newTestHandler(batchRepo *fakeBatchRepo, pool *fakePool) *Handler {
 	queryHandler := query.NewBatchQueryHandler(batchRepo)
-	adminHandler := command.NewAdminHandler(batchRepo)
+	adminHandler := command.NewAdminHandler(batchRepo, &fakeProcessor{})
 	return NewHandler(queryHandler, adminHandler, pool)
 }
 
@@ -254,6 +254,88 @@ func TestHandleForceClose_InternalError(t *testing.T) {
 	mux := newTestMux(newTestHandler(repo, &fakePool{}))
 
 	req := httptest.NewRequest(http.MethodPost, "/batches/batch-1/force-close",
+		strings.NewReader(`{"operator_id":"op-1"}`))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+}
+
+// ─── POST /batches/{id}/resubmit ──────────────────────────────────────────────
+
+func TestHandleResubmitBatch_Success(t *testing.T) {
+	b := newClosedBatch(t)
+	repo := &fakeBatchRepo{findByIDResult: b}
+	mux := newTestMux(newTestHandler(repo, &fakePool{}))
+
+	req := httptest.NewRequest(http.MethodPost, "/batches/"+b.ID()+"/resubmit",
+		strings.NewReader(`{"operator_id":"op-1"}`))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	body := decodeJSON(t, rec.Body.Bytes())
+	if body["status"] != "submitted" {
+		t.Errorf("body[status] = %v, want %q", body["status"], "submitted")
+	}
+}
+
+func TestHandleResubmitBatch_InvalidBody(t *testing.T) {
+	mux := newTestMux(newTestHandler(&fakeBatchRepo{}, &fakePool{}))
+
+	req := httptest.NewRequest(http.MethodPost, "/batches/batch-1/resubmit", strings.NewReader(`not-json`))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+	body := decodeJSON(t, rec.Body.Bytes())
+	if body["error"] != "INVALID_BODY" {
+		t.Errorf("body[error] = %v, want %q", body["error"], "INVALID_BODY")
+	}
+}
+
+func TestHandleResubmitBatch_NotFound(t *testing.T) {
+	repo := &fakeBatchRepo{findByIDResult: nil}
+	mux := newTestMux(newTestHandler(repo, &fakePool{}))
+
+	req := httptest.NewRequest(http.MethodPost, "/batches/batch-999/resubmit",
+		strings.NewReader(`{"operator_id":"op-1"}`))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestHandleResubmitBatch_ValidationError(t *testing.T) {
+	mux := newTestMux(newTestHandler(&fakeBatchRepo{}, &fakePool{}))
+
+	// operator_id vacío — el path {id} sigue teniendo un valor no vacío.
+	req := httptest.NewRequest(http.MethodPost, "/batches/batch-1/resubmit", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+	body := decodeJSON(t, rec.Body.Bytes())
+	if body["error"] != "VALIDATION_ERROR" {
+		t.Errorf("body[error] = %v, want %q", body["error"], "VALIDATION_ERROR")
+	}
+}
+
+func TestHandleResubmitBatch_InternalError(t *testing.T) {
+	repo := &fakeBatchRepo{findByIDErr: errors.New("db unreachable")}
+	mux := newTestMux(newTestHandler(repo, &fakePool{}))
+
+	req := httptest.NewRequest(http.MethodPost, "/batches/batch-1/resubmit",
 		strings.NewReader(`{"operator_id":"op-1"}`))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)

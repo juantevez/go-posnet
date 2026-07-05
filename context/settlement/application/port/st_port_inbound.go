@@ -28,6 +28,11 @@ type AdminService interface {
 
 	// ForceClose fuerza el cierre de un batch (uso en operaciones de soporte).
 	ForceClose(ctx interface{}, cmd ForceCloseCommand) error
+
+	// ResubmitBatch reintenta el envío al procesador externo de un batch
+	// atascado en CLOSED (ej: el envío original falló por una falla transitoria
+	// del procesador). Uso en operaciones de soporte.
+	ResubmitBatch(ctx interface{}, cmd ResubmitBatchCommand) error
 }
 
 // ─── Commands ─────────────────────────────────────────────────────────────────
@@ -67,6 +72,12 @@ type ProcessBatchCloseCommand struct {
 
 // ForceCloseCommand fuerza el cierre de un batch desde operaciones.
 type ForceCloseCommand struct {
+	BatchID    string
+	OperatorID string // Para auditoría
+}
+
+// ResubmitBatchCommand reintenta el envío al procesador de un batch CLOSED.
+type ResubmitBatchCommand struct {
 	BatchID    string
 	OperatorID string // Para auditoría
 }

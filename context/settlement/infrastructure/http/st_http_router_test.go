@@ -14,7 +14,7 @@ import (
 
 func newRouterFor(repo repository.SettlementBatchRepository, pool *fakePool) http.Handler {
 	queryHandler := query.NewBatchQueryHandler(repo)
-	adminHandler := command.NewAdminHandler(repo)
+	adminHandler := command.NewAdminHandler(repo, &fakeProcessor{})
 	return NewRouter(queryHandler, adminHandler, pool)
 }
 

@@ -11,6 +11,7 @@ import (
 	"github.com/juantevez/go-posnet/context/settlement/application/command"
 	"github.com/juantevez/go-posnet/context/settlement/application/query"
 	"github.com/juantevez/go-posnet/context/settlement/config"
+	"github.com/juantevez/go-posnet/context/settlement/domain/service"
 	grpcserver "github.com/juantevez/go-posnet/context/settlement/infrastructure/grpc/server"
 	httpinfra "github.com/juantevez/go-posnet/context/settlement/infrastructure/http"
 	natsinfra "github.com/juantevez/go-posnet/context/settlement/infrastructure/nats"
@@ -83,20 +84,19 @@ func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 
 	// SettlementProcessor — adaptador hacia el procesador externo (Visa/MC).
 	// TODO: instanciar processor.NewISO8583Processor(cfg.Settlement) cuando esté implementado.
-	// Por ahora nil — el método submitBatch queda como no-op.
-	var processor interface{} = nil
-	_ = processor
+	// Por ahora nil — submitBatch (BatchHandler) y ResubmitBatch (AdminHandler) quedan como no-op.
+	var processor service.SettlementProcessor
 
 	// ── Aplicación ─────────────────────────────────────────────────────────────
 	batchHandler := command.NewBatchHandler(
 		batchRepo,
 		eventPub,
-		nil, // processor — reemplazar con instancia real
+		processor,
 		idempotency,
 		pool,
 		cfg.Settlement.MDRPercent,
 	)
-	adminHandler := command.NewAdminHandler(batchRepo)
+	adminHandler := command.NewAdminHandler(batchRepo, processor)
 	queryHandler := query.NewBatchQueryHandler(batchRepo)
 
 	// ── Adaptadores de entrada ─────────────────────────────────────────────────

@@ -36,6 +36,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET  /batches/{id}", h.handleGetBatch)
 	mux.HandleFunc("GET  /merchants/{merchant_id}/batches", h.handleListBatches)
 	mux.HandleFunc("POST /batches/{id}/force-close", h.handleForceClose)
+	mux.HandleFunc("POST /batches/{id}/resubmit", h.handleResubmitBatch)
 }
 
 func (h *Handler) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -129,6 +130,42 @@ func (h *Handler) handleForceClose(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "closed"})
+}
+
+// POST /batches/{id}/resubmit
+func (h *Handler) handleResubmitBatch(w http.ResponseWriter, r *http.Request) {
+	ctx, span := observability.StartSpan(r.Context(), "http.ResubmitBatch")
+	defer span.End()
+
+	var body struct {
+		OperatorID string `json:"operator_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, errResp("INVALID_BODY", "invalid request body"))
+		return
+	}
+
+	cmd := port.ResubmitBatchCommand{
+		BatchID:    r.PathValue("id"),
+		OperatorID: body.OperatorID,
+	}
+
+	if err := h.adminHandler.ResubmitBatch(ctx, cmd); err != nil {
+		var notFound *pkgerrors.NotFoundError
+		if errors.As(err, &notFound) {
+			writeJSON(w, http.StatusNotFound, errResp("NOT_FOUND", "batch not found"))
+			return
+		}
+		var validationErr *pkgerrors.ValidationError
+		if errors.As(err, &validationErr) {
+			writeJSON(w, http.StatusBadRequest, errResp("VALIDATION_ERROR", err.Error()))
+			return
+		}
+		observability.RecordError(ctx, err)
+		writeJSON(w, http.StatusInternalServerError, errResp("INTERNAL", "internal error"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "submitted"})
 }
 
 func writeJSON(w http.ResponseWriter, code int, body any) {

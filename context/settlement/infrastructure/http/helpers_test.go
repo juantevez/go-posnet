@@ -10,6 +10,7 @@ import (
 
 	"github.com/juantevez/go-posnet/context/settlement/domain/aggregate"
 	"github.com/juantevez/go-posnet/context/settlement/domain/repository"
+	"github.com/juantevez/go-posnet/context/settlement/domain/valueobject"
 	"github.com/juantevez/go-posnet/pkg/domain"
 )
 
@@ -69,6 +70,17 @@ func (p *panickyBatchRepo) ListByMerchantDate(context.Context, domain.MerchantID
 	return nil, nil
 }
 
+// ─── fakeProcessor ───────────────────────────────────────────────────────────
+
+type fakeProcessor struct {
+	confirmationID string
+	err            error
+}
+
+func (f *fakeProcessor) Submit(context.Context, *aggregate.SettlementBatch) (string, error) {
+	return f.confirmationID, f.err
+}
+
 // ─── fakePool ────────────────────────────────────────────────────────────────
 
 // fakePool implementa pgutil.PgxPool. Solo Ping() se ejercita en este
@@ -92,4 +104,17 @@ func newBatch(t *testing.T) *aggregate.SettlementBatch {
 		t.Fatalf("NewSettlementBatch() error = %v", err)
 	}
 	return b
+}
+
+func newClosedBatch(t *testing.T) *aggregate.SettlementBatch {
+	t.Helper()
+	return aggregate.Reconstitute(aggregate.ReconstituteParams{
+		ID:         "batch-1",
+		TerminalID: domain.NewTerminalID(),
+		MerchantID: domain.NewMerchantID(),
+		BatchDate:  time.Now(),
+		State:      valueobject.BatchStateClosed,
+		Currency:   "ARS",
+		CreatedAt:  time.Now(),
+	})
 }
