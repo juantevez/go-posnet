@@ -92,12 +92,11 @@ func TestUpdateRuleThreshold_Success(t *testing.T) {
 	if len(ruleRepo.savedRules) != 1 {
 		t.Fatalf("saved rules = %d, want 1", len(ruleRepo.savedRules))
 	}
-	// Nota: la implementación actual tiene un TODO explícito ("En la
-	// implementación completa: rule.UpdateThreshold(...)") — NewThreshold y
-	// NewScoreWeight no se aplican todavía a la regla, se guarda tal cual
-	// estaba. Este test documenta el comportamiento actual, no el deseado.
-	if ruleRepo.savedRules[0].ScoreWeight() != 10 {
-		t.Errorf("savedRules[0].ScoreWeight() = %d, want 10 (sin cambios — ver TODO en UpdateRuleThreshold)", ruleRepo.savedRules[0].ScoreWeight())
+	if ruleRepo.savedRules[0].ScoreWeight() != 50 {
+		t.Errorf("savedRules[0].ScoreWeight() = %d, want 50", ruleRepo.savedRules[0].ScoreWeight())
+	}
+	if ruleRepo.savedRules[0].ThresholdValue() != 99 {
+		t.Errorf("savedRules[0].ThresholdValue() = %v, want 99", ruleRepo.savedRules[0].ThresholdValue())
 	}
 }
 
