@@ -7,7 +7,10 @@ Simula dos tipos de usuarios concurrentes:
   SettlementNATSUser — publica AuthorizationApproved directamente a NATS
                        y verifica el batch resultante via HTTP
 
-Endpoints HTTP del BC (puerto 8084, st_http_handler.go):
+Endpoints HTTP del BC (puerto 8084 en docker-compose.yml — el default interno
+del código Go es 8083, pero deployments/docker/docker-compose.yml lo pisa con
+HTTP_PORT=8084 — usar SIEMPRE el puerto publicado por docker-compose, no el
+default del código, si corrés vía Docker; ver `docker compose ps`):
   GET  /healthz
   GET  /readyz
   GET  /batches/{id}
@@ -32,6 +35,15 @@ Uso:
   # Headless:
   locust -f settlement_locust.py --headless -u 10 -r 2 --run-time 2m \\
     --host http://localhost:8084
+
+  # Combinado con los locustfiles de los otros BCs (cada uno apunta a su
+  # propio puerto via el atributo `host` de su *HTTPUser — NO pasar --host
+  # ni completar "Host" en la web UI, porque eso pisa el host de las 4
+  # clases HTTP por igual):
+  locust -f terminal-gateway/terminal_gateway_locust.py \\
+         -f authorization/authorization_locust.py \\
+         -f fraud-detection/fraud_detection_locust.py \\
+         -f settlement/settlement_locust.py
 
 Variables de entorno:
   NATS_URL         URL de NATS JetStream    (default: nats://localhost:4222)
@@ -217,6 +229,7 @@ class SettlementHTTPUser(HttpUser):
     Simula operadores de back-office consultando batches y merchants.
     Peso 3: 3 usuarios HTTP por cada 1 NATS.
     """
+    host = _http_host
     weight = 3
     wait_time = between(0.5, 2.0)
 

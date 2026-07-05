@@ -67,3 +67,14 @@ func (r *FraudRule) Deactivate() {
 	r.isActive = false
 	r.updatedAt = time.Now().UTC()
 }
+
+// UpdateThreshold actualiza el umbral y el peso de la regla, validando invariantes.
+func (r *FraudRule) UpdateThreshold(newThreshold float64, newScoreWeight int) error {
+	if newScoreWeight <= 0 || newScoreWeight > 100 {
+		return fmt.Errorf("fraud_rule: score_weight %d out of range [1, 100]", newScoreWeight)
+	}
+	r.thresholdValue = newThreshold
+	r.scoreWeight = newScoreWeight
+	r.updatedAt = time.Now().UTC()
+	return nil
+}

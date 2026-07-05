@@ -39,6 +39,10 @@ Uso:
   locust -f terminal_gateway_locust.py \\
     --headless -u 10 -r 2 --run-time 3m --host http://localhost:8081
 
+  # Combinado con los locustfiles de los otros BCs: NO pasar --host ni
+  # completar "Host" en la web UI — cada *HTTPUser ya fija su propio host
+  # (ver settlement_locust.py para el detalle de por qué).
+
 Variables de entorno:
   POLL_TIMEOUT_S   Timeout de polling del estado QR (default: 10)
   POLL_INTERVAL_S  Intervalo de polling (default: 0.1)
@@ -110,6 +114,7 @@ class TGHTTPUser(HttpUser):
     Simula operadores y dashboards consultando el estado del gateway.
     Peso 2: 2 usuarios HTTP por cada 1 QR.
     """
+    host = _http_host
     weight = 2
     wait_time = between(0.5, 2.0)
 
@@ -252,6 +257,7 @@ class TGQRFlowUser(HttpUser):
 
     Peso 3: es el flujo más representativo del tráfico real.
     """
+    host = _http_host
     weight = 3
     wait_time = between(1.0, 3.0)
 
@@ -498,6 +504,7 @@ class TGAdminUser(HttpUser):
 
     Peso 1: operaciones poco frecuentes en tráfico real.
     """
+    host = _http_host
     weight = 1
     wait_time = between(3.0, 8.0)
 

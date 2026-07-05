@@ -50,11 +50,9 @@ func (h *AdminHandler) UpdateRuleThreshold(
 
 	for _, rule := range rules {
 		if rule.ID() == cmd.RuleID {
-			// Reconstruir con los nuevos valores usando el constructor de entidad
-			updated := rule
-			_ = updated
-			// En la implementación completa: rule.UpdateThreshold(cmd.NewThreshold, cmd.NewScoreWeight)
-			// Por ahora guardar con Save
+			if err := rule.UpdateThreshold(cmd.NewThreshold, cmd.NewScoreWeight); err != nil {
+				return fmt.Errorf("UpdateRuleThreshold: %w", err)
+			}
 			if err := h.ruleRepo.Save(ctx, rule); err != nil {
 				return fmt.Errorf("UpdateRuleThreshold: save rule: %w", err)
 			}

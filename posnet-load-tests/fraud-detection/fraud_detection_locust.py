@@ -7,7 +7,10 @@ Simula dos tipos de usuarios concurrentes:
   FraudNATSUser  — publica FraudCheckRequested directamente a NATS
                    y verifica el resultado via HTTP
 
-Endpoints HTTP del BC (puerto 8083, fd_http_handler.go):
+Endpoints HTTP del BC (puerto 8083 en docker-compose.yml — el default interno
+del código Go es 8082, pero deployments/docker/docker-compose.yml lo pisa con
+HTTP_PORT=8083 — usar SIEMPRE el puerto publicado por docker-compose, no el
+default del código, si corrés vía Docker; ver `docker compose ps`):
   GET /healthz
   GET /readyz
   GET /fraud-cases/{transaction_id}
@@ -33,6 +36,10 @@ Uso:
   # Headless:
   locust -f fraud_detection_locust.py --headless -u 10 -r 2 --run-time 2m \\
     --host http://localhost:8083
+
+  # Combinado con los locustfiles de los otros BCs: NO pasar --host ni
+  # completar "Host" en la web UI — cada *HTTPUser ya fija su propio host
+  # (ver settlement_locust.py para el detalle de por qué).
 
 Variables de entorno:
   NATS_URL         URL de NATS JetStream    (default: nats://localhost:4222)
@@ -147,6 +154,7 @@ class FraudHTTPUser(HttpUser):
     Simula analistas de fraude y dashboards consultando casos y reglas.
     Peso 3: 3 usuarios HTTP por cada 1 NATS.
     """
+    host = _http_host
     weight = 3
     wait_time = between(0.5, 2.0)
 

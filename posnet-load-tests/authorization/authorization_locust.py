@@ -14,6 +14,10 @@ Uso:
   locust -f authorization_locust.py --headless -u 10 -r 2 --run-time 2m \
     --host http://localhost:8080
 
+  # Combinado con los locustfiles de los otros BCs: NO pasar --host ni
+  # completar "Host" en la web UI — cada *HTTPUser ya fija su propio host
+  # (ver settlement_locust.py para el detalle de por qué).
+
 Variables de entorno:
   NATS_URL         URL de NATS JetStream    (default: nats://localhost:4222)
   POLL_TIMEOUT_S   Timeout de polling       (default: 10)
@@ -130,6 +134,7 @@ class AuthHTTPUser(HttpUser):
     Simula operadores y dashboards consultando el estado de transacciones.
     Peso 3: 3 usuarios HTTP por cada 1 NATS.
     """
+    host = _http_host
     weight = 3
     wait_time = between(0.5, 2.0)
 
