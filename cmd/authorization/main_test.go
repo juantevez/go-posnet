@@ -1,0 +1,37 @@
+package main
+
+import (
+	"strings"
+	"testing"
+)
+
+// setMinimalEnv configura las variables requeridas por config.Load y limpia
+// las opcionales para que run() llegue hasta el wiring sin depender del entorno
+// de la máquina. El DSN de Postgres es inválido a propósito: run debe fallar en
+// el wiring, no antes.
+func setMinimalEnv(t *testing.T) {
+	t.Helper()
+	// Requeridas por config.Load (requireEnv panica si faltan).
+	t.Setenv("POSTGRES_DSN", "host=localhost port=notanumber")
+	t.Setenv("NATS_URL", "nats://127.0.0.1:1")
+
+	// Opcionales que podrían apuntar a colectores reales; las neutralizamos.
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "127.0.0.1:1")
+	t.Setenv("ENVIRONMENT", "test")
+	t.Setenv("OTEL_SERVICE_NAME", "posnet-authorization-test")
+}
+
+// run debe propagar el error del wiring cuando las dependencias no pueden
+// construirse (DSN de Postgres inválido), envuelto con "wire dependencies".
+// De paso ejercita config.Load y la inicialización de observabilidad.
+func TestRun_WireError(t *testing.T) {
+	setMinimalEnv(t)
+
+	err := run()
+	if err == nil {
+		t.Fatal("run() error = nil, want error de wiring")
+	}
+	if !strings.Contains(err.Error(), "wire dependencies") {
+		t.Errorf("run() error = %q, want que contenga %q", err.Error(), "wire dependencies")
+	}
+}

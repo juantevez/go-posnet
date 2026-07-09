@@ -67,10 +67,14 @@ func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 
 	js, err := natsutil.JetStream(natsConn)
 	if err != nil {
+		natsConn.Close()
+		pool.Close()
 		return nil, fmt.Errorf("wire: init JetStream: %w", err)
 	}
 
 	if err := natsutil.EnsureStreams(js); err != nil {
+		natsConn.Close()
+		pool.Close()
 		return nil, fmt.Errorf("wire: ensure NATS streams: %w", err)
 	}
 
