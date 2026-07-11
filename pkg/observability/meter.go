@@ -61,6 +61,30 @@ func RecordNATSProcessed(ctx context.Context, subject string) {
 	}
 }
 
+var (
+	natsFailedOnce sync.Once
+	natsFailed     metric.Int64Counter
+)
+
+// RecordNATSFailed contabiliza un mensaje NATS que falló su procesamiento,
+// desglosado por subject y kind ("validation" = error permanente → Term,
+// "transient" = error transitorio → Nak, "panic"). Nombre final:
+// posnet_nats_messages_failed_total. El label "bc" lo agrega Prometheus.
+func RecordNATSFailed(ctx context.Context, subject, kind string) {
+	natsFailedOnce.Do(func() {
+		natsFailed, _ = Meter("posnet.nats").Int64Counter(
+			"posnet_nats_messages_failed",
+			metric.WithDescription("Mensajes NATS que fallaron su procesamiento, por subject y kind."),
+		)
+	})
+	if natsFailed != nil {
+		natsFailed.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("subject", subject),
+			attribute.String("kind", kind),
+		))
+	}
+}
+
 // MetricsHandler retorna el handler HTTP que expone las métricas en formato
 // Prometheus para el endpoint /metrics de cada BC.
 //

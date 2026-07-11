@@ -123,19 +123,15 @@
     },
     {
       "id": 7,
-      "title": "Errores/s por tipo",
+      "title": "Errores NATS/s por tipo",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "SUSTITUTO de error rate por tipo (ValidationError/TransientError/Panic, pendiente): rechazos, errores de acquirer y fallos de notificación.",
+      "description": "rate(posnet_nats_messages_failed_total) por kind: validation (permanente → Term) vs transient (→ Nak).",
       "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 15, "stacking": { "mode": "normal" } } }, "overrides": [] },
       "targets": [
         { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (bc) (rate(posnet_transactions_rejected_total{bc=~\"$bc\"}[5m]))", "legendFormat": "rejected · {{bc}}" },
-        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (bc) (rate(posnet_acquirer_errors_total{bc=~\"$bc\"}[5m]))", "legendFormat": "acquirer_err · {{bc}}" },
-        { "refId": "C", "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (bc) (rate(posnet_notifications_failed_total{bc=~\"$bc\"}[5m]))", "legendFormat": "notif_failed · {{bc}}" }
+          "expr": "sum by (kind) (rate(posnet_nats_messages_failed_total{bc=~\"$bc\"}[5m]))", "legendFormat": "{{kind}}" }
       ]
     }
   ]

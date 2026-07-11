@@ -85,11 +85,11 @@
     },
     {
       "id": 5,
-      "title": "Sesiones in-flight (proxy)",
+      "title": "Sesiones en PROCESSING",
       "type": "stat",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "PROXY hasta instrumentar el gauge posnet_sessions_processing_current: created - approved - expired. Spike sostenido = saga atascada.",
+      "description": "posnet_sessions_processing_current: sesiones en curso ahora mismo. Spike sostenido = saga atascada (alerta Crítica en >10).",
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -100,24 +100,20 @@
       "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "background", "graphMode": "area", "textMode": "value" },
       "targets": [
         { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "clamp_min(sum(posnet_sessions_created_total) - sum(posnet_sessions_approved_total) - (sum(posnet_sessions_expired_total) or vector(0)), 0)" }
+          "expr": "posnet_sessions_processing_current" }
       ]
     },
     {
       "id": 6,
-      "title": "Errores por BC",
+      "title": "Errores NATS por BC",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "SUSTITUTO de posnet_nats_messages_failed_total (pendiente): rechazos, errores de acquirer y fallos de notificación, por BC.",
-      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 15, "stacking": { "mode": "normal" } } }, "overrides": [] },
+      "description": "sum by(bc) rate(posnet_nats_messages_failed_total). Mensajes que fallaron su procesamiento (validation + transient).",
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 15, "stacking": { "mode": "normal" } } }, "overrides": [] },
       "targets": [
         { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (bc) (rate(posnet_transactions_rejected_total[5m]))", "legendFormat": "rejected · {{bc}}" },
-        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (bc) (rate(posnet_acquirer_errors_total[5m]))", "legendFormat": "acquirer_err · {{bc}}" },
-        { "refId": "C", "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (bc) (rate(posnet_notifications_failed_total[5m]))", "legendFormat": "notif_failed · {{bc}}" }
+          "expr": "sum by (bc) (rate(posnet_nats_messages_failed_total[5m]))", "legendFormat": "{{bc}}" }
       ]
     }
   ]

@@ -140,6 +140,17 @@ func (r *PaymentSessionRepo) DeleteExpired(ctx context.Context) (int64, error) {
 	return tag.RowsAffected(), nil
 }
 
+// CountProcessing retorna la cantidad de sesiones actualmente en PROCESSING.
+// Alimenta el gauge posnet_sessions_processing_current.
+func (r *PaymentSessionRepo) CountProcessing(ctx context.Context) (int64, error) {
+	const q = `SELECT COUNT(*) FROM terminal_gateway.payment_sessions WHERE state = 'PROCESSING'`
+	var n int64
+	if err := r.pool.QueryRow(ctx, q).Scan(&n); err != nil {
+		return 0, fmt.Errorf("PaymentSessionRepo.CountProcessing: %w", err)
+	}
+	return n, nil
+}
+
 func scanSession(row pgx.Row) (*aggregate.PaymentSession, error) {
 	var (
 		id, terminalID, merchantID   string

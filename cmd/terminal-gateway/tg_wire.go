@@ -18,9 +18,11 @@ import (
 	pginfra "github.com/juantevez/go-posnet/context/terminal-gateway/infrastructure/postgres"
 	wsinfra "github.com/juantevez/go-posnet/context/terminal-gateway/infrastructure/websocket"
 	"github.com/juantevez/go-posnet/pkg/natsutil"
+	"github.com/juantevez/go-posnet/pkg/observability"
 	"github.com/juantevez/go-posnet/pkg/outbox"
 	"github.com/juantevez/go-posnet/pkg/pgutil"
 	nats "github.com/nats-io/nats.go"
+	"go.opentelemetry.io/otel/metric"
 )
 
 // app agrupa todos los componentes del servicio y sus recursos abiertos.
@@ -123,6 +125,22 @@ func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 		return nil, fmt.Errorf("init terminal-gateway metrics: %w", err)
 	}
 	sessionHandler.SetMetrics(tgMetrics)
+
+	// Gauge de sesiones en PROCESSING — se lee de Postgres en cada scrape.
+	if _, err := observability.Meter("posnet.terminal_gateway").Int64ObservableGauge(
+		"posnet_sessions_processing_current",
+		metric.WithDescription("Sesiones en estado PROCESSING ahora mismo. Spike = saga atascada."),
+		metric.WithInt64Callback(func(ctx context.Context, o metric.Int64Observer) error {
+			n, err := sessionRepo.CountProcessing(ctx)
+			if err != nil {
+				return err
+			}
+			o.Observe(n)
+			return nil
+		}),
+	); err != nil {
+		return nil, fmt.Errorf("init sessions_processing gauge: %w", err)
+	}
 	queryHandler := query.NewSessionQueryHandler(sessionRepo)
 
 	// ── Adaptadores de entrada ─────────────────────────────────────────────────

@@ -220,6 +220,7 @@ func (s *Subscriber) nak(ctx context.Context, msg *natsclient.Msg, err error, ev
 			slog.String("event_id", eventID),
 			slog.String("error", err.Error()),
 		)
+		observability.RecordNATSFailed(ctx, msg.Subject, "validation")
 		_ = msg.Term()
 		return
 	}
@@ -228,6 +229,7 @@ func (s *Subscriber) nak(ctx context.Context, msg *natsclient.Msg, err error, ev
 		slog.String("event_id", eventID),
 		slog.String("error", err.Error()),
 	)
+	observability.RecordNATSFailed(ctx, msg.Subject, "transient")
 	_ = msg.Nak()
 }
 
