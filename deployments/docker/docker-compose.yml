@@ -51,6 +51,18 @@ services:
       retries: 5
       start_period: 5s
 
+  jaeger:
+    image: jaegertracing/all-in-one:1.56
+    container_name: posnet-jaeger
+    restart: unless-stopped
+    networks: [posnet]
+    # Solo se expone la UI. El OTLP (4317/4318) queda interno en la red posnet
+    # porque esos puertos del host ya los usa el otel-collector.
+    ports:
+      - "16686:16686"
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.100.0
     container_name: posnet-otel
@@ -62,6 +74,8 @@ services:
     volumes:
       - ./otel-collector-config.yml:/etc/otel/config.yml
     command: ["--config=/etc/otel/config.yml"]
+    depends_on:
+      - jaeger
 
   acquirer-mock:
     image: mockserver/mockserver:5.15.0

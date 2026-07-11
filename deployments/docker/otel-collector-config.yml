@@ -14,18 +14,20 @@ processors:
 exporters:
   debug:
     verbosity: basic
-  # En producción agregar exporters a Jaeger, Prometheus, etc.
-  # jaeger:
-  #   endpoint: jaeger:14250
-  #   tls:
-  #     insecure: true
+  # Jaeger recibe OTLP directo (all-in-one 1.56). Conexión interna en la red
+  # posnet; la UI se expone en el host (16686). No requiere el viejo exporter
+  # jaeger ni el puerto 14250.
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
 
 service:
   pipelines:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [debug]
+      exporters: [debug, otlp/jaeger]
     metrics:
       receivers: [otlp]
       processors: [batch]
