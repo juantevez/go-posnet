@@ -1,0 +1,14 @@
+route:
+  receiver: default
+  group_by: ["alertname", "bc"]
+  group_wait: 10s
+  group_interval: 30s
+  repeat_interval: 1h
+
+receivers:
+  - name: default
+    # MVP local: se rutea al webhook-mock ya presente en el compose.
+    # Reemplazar por email/Slack/PagerDuty en producción.
+    webhook_configs:
+      - url: "http://webhook-mock:9200/alertmanager"
+        send_resolved: true

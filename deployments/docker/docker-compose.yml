@@ -239,6 +239,7 @@ services:
       - "9099:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/rules:/etc/prometheus/rules
       - prometheus_data:/prometheus
     command:
       - --config.file=/etc/prometheus/prometheus.yml
@@ -249,6 +250,19 @@ services:
       - fraud-detection
       - settlement
       - notification
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: posnet-alertmanager
+    restart: unless-stopped
+    networks: [posnet]
+    # Host 9097 → 9093 interno. El 9093 del host ya lo usa el gRPC de settlement.
+    ports:
+      - "9097:9093"
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
 
   grafana:
     image: grafana/grafana:10.4.0

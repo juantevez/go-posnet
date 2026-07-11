@@ -1,0 +1,58 @@
+groups:
+  - name: posnet-critical
+    rules:
+      # Saga completa detenida: entran transacciones pero ninguna se aprueba.
+      # Causa probable: error en Authorization, Fraud o Acquirer.
+      - alert: SagaCompletaDetenida
+        expr: |
+          rate(posnet_transactions_approved_total[5m]) == 0
+          and rate(posnet_transactions_received_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Saga detenida: entran transacciones pero ninguna se aprueba"
+          description: "rate(approved[5m])==0 con rate(received[5m])>0 por 2m. Revisar Authorization, Fraud y Acquirer."
+
+      # Error rate alto: demasiadas transacciones rechazadas.
+      # Causa probable: fraude masivo o bug en validación.
+      - alert: ErrorRateAlta
+        expr: |
+          rate(posnet_transactions_rejected_total[5m])
+          / rate(posnet_transactions_received_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Error rate > 10% en Authorization"
+          description: "rejected/received > 0.1 por 5m ({{ $value | humanizePercentage }}). Posible fraude masivo o bug de validación."
+
+      # Pool de Postgres agotado: casi todas las conexiones prestadas.
+      # Causa probable: queries lentas o conexiones leakeadas.
+      - alert: PoolPostgresAgotado
+        expr: pgx_pool_acquired_conns / pgx_pool_max_conns > 0.95
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Pool pgx agotado en {{ $labels.bc }}"
+          description: "acquired/max > 0.95 por 1m en {{ $labels.bc }}. Queries lentas o conexiones leakeadas."
+
+      # Sesiones bloqueadas en PROCESSING (PROXY del gauge
+      # posnet_sessions_processing_current, aún no instrumentado):
+      # sesiones creadas que no llegaron a APPROVED en la ventana.
+      # Causa probable: saga atascada — AuthApproved no llega.
+      - alert: SesionesBloqueadasProcessing
+        expr: |
+          (sum(increase(posnet_sessions_created_total[5m]))
+           - sum(increase(posnet_sessions_approved_total[5m]))) > 10
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Sesiones atascadas sin aprobar (proxy)"
+          description: "created - approved (5m) > 10 por 2m. Saga atascada: AuthApproved no llega. Reemplazar por posnet_sessions_processing_current cuando se instrumente el gauge."
+
+      # PostgresDeadlock (§6.1) requiere postgres_exporter (Fase 3):
+      #   expr: increase(pg_stat_database_deadlocks[1m]) > 0
+      # Se agregará cuando se deploye postgres_exporter.
