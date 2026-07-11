@@ -1,0 +1,95 @@
+{
+  "id": null,
+  "uid": "posnet-slo",
+  "title": "POSNET — SLO / Error Budget",
+  "tags": ["posnet", "slo"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    { "id": 100, "type": "row", "title": "SLO 1 — Latencia de saga (95% < 3s, budget 5%)", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 } },
+    {
+      "id": 1, "title": "Objetivo (SLO)", "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percent", "color": { "mode": "fixed", "fixedColor": "blue" } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "95", "instant": true } ]
+    },
+    {
+      "id": 2, "title": "SLI actual (30d, % sagas < 3s)", "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Proporción de sagas completadas en < 3s sobre la ventana disponible.",
+      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 2, "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "yellow", "value": 95 }, { "color": "green", "value": 99 } ] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "sum(increase(posnet_saga_duration_seconds_bucket{le=\"3\"}[30d])) / sum(increase(posnet_saga_duration_seconds_count[30d])) * 100", "instant": true } ]
+    },
+    {
+      "id": 3, "title": "Error budget restante", "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "100% = budget intacto; <0% = SLO incumplido en la ventana.",
+      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 1, "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "yellow", "value": 25 }, { "color": "green", "value": 50 } ] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "(1 - ((1 - sum(increase(posnet_saga_duration_seconds_bucket{le=\"3\"}[30d])) / sum(increase(posnet_saga_duration_seconds_count[30d]))) / 0.05)) * 100", "instant": true } ]
+    },
+    {
+      "id": 4, "title": "Burn rate (1h / 6h) — 1.0 = a ritmo de budget", "type": "timeseries",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "error_ratio / budget. >1 quema más rápido que lo permitido. Fast burn alerta en 14.4x, slow en 6x.",
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "posnet_slo:saga_latency:error_ratio_rate1h / 0.05", "legendFormat": "burn 1h" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "posnet_slo:saga_latency:error_ratio_rate6h / 0.05", "legendFormat": "burn 6h" }
+      ]
+    },
+    { "id": 101, "type": "row", "title": "SLO 2 — Éxito de transacción (99% sin error de sistema, budget 1%)", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 } },
+    {
+      "id": 5, "title": "Objetivo (SLO)", "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percent", "color": { "mode": "fixed", "fixedColor": "blue" } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "99", "instant": true } ]
+    },
+    {
+      "id": 6, "title": "SLI actual (30d, % sin error de sistema)", "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "1 - (acquirer_errors + nats_failed) / received, sobre la ventana disponible.",
+      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 2, "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "yellow", "value": 99 }, { "color": "green", "value": 99.9 } ] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "(1 - ((sum(increase(posnet_acquirer_errors_total[30d])) or vector(0)) + (sum(increase(posnet_nats_messages_failed_total[30d])) or vector(0))) / sum(increase(posnet_transactions_received_total[30d]))) * 100", "instant": true } ]
+    },
+    {
+      "id": 7, "title": "Error budget restante", "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "100% = budget intacto; <0% = SLO incumplido en la ventana.",
+      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 1, "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "yellow", "value": 25 }, { "color": "green", "value": 50 } ] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "(1 - (((sum(increase(posnet_acquirer_errors_total[30d])) or vector(0)) + (sum(increase(posnet_nats_messages_failed_total[30d])) or vector(0))) / sum(increase(posnet_transactions_received_total[30d])) / 0.01)) * 100", "instant": true } ]
+    },
+    {
+      "id": 8, "title": "Burn rate (1h / 6h) — 1.0 = a ritmo de budget", "type": "timeseries",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "error_ratio / budget. Fast burn alerta en 14.4x, slow en 6x.",
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "posnet_slo:tx_success:error_ratio_rate1h / 0.01", "legendFormat": "burn 1h" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "posnet_slo:tx_success:error_ratio_rate6h / 0.01", "legendFormat": "burn 6h" }
+      ]
+    }
+  ]
+}

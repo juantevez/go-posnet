@@ -1,0 +1,78 @@
+groups:
+  # ─── Recording rules: error ratio (SLI) por ventana ──────────────────────────
+  # Los SLOs del MVP (alineados con la "regla práctica" del doc §12):
+  #   - Latencia de saga: 95% de las sagas < 3s   (error budget 5%)
+  #   - Éxito de transacción: 99% sin error de sistema (error budget 1%)
+  #     "error de sistema" = acquirer INDETERMINATE + fallos de procesamiento NATS
+  #     (los rechazos de fraude/adquirente son resultados de negocio válidos, NO cuentan).
+  - name: posnet-slo-recording
+    rules:
+      - record: posnet_slo:saga_latency:error_ratio_rate1h
+        expr: |
+          1 - (
+            sum(rate(posnet_saga_duration_seconds_bucket{le="3"}[1h]))
+            / sum(rate(posnet_saga_duration_seconds_count[1h]))
+          )
+      - record: posnet_slo:saga_latency:error_ratio_rate6h
+        expr: |
+          1 - (
+            sum(rate(posnet_saga_duration_seconds_bucket{le="3"}[6h]))
+            / sum(rate(posnet_saga_duration_seconds_count[6h]))
+          )
+      - record: posnet_slo:tx_success:error_ratio_rate1h
+        expr: |
+          (
+            (sum(rate(posnet_acquirer_errors_total[1h])) or vector(0))
+            + (sum(rate(posnet_nats_messages_failed_total[1h])) or vector(0))
+          ) / sum(rate(posnet_transactions_received_total[1h]))
+      - record: posnet_slo:tx_success:error_ratio_rate6h
+        expr: |
+          (
+            (sum(rate(posnet_acquirer_errors_total[6h])) or vector(0))
+            + (sum(rate(posnet_nats_messages_failed_total[6h])) or vector(0))
+          ) / sum(rate(posnet_transactions_received_total[6h]))
+
+  # ─── Burn-rate alerts (Google SRE, 2 ventanas) ───────────────────────────────
+  # Fast burn (1h): 14.4x el budget → agota 30d de budget en ~2 días.
+  # Slow burn (6h): 6x el budget → agota 30d de budget en ~5 días.
+  - name: posnet-slo-burn
+    rules:
+      - alert: SagaLatencySLOFastBurn
+        expr: posnet_slo:saga_latency:error_ratio_rate1h > (14.4 * 0.05)
+        for: 5m
+        labels:
+          severity: warning
+          slo: saga_latency
+        annotations:
+          summary: "Quema rápida del error budget de latencia de saga"
+          description: "error ratio 1h = {{ $value | humanizePercentage }} (> 72%, 14.4x del budget 5%). El budget de 30d se agota en ~2 días a este ritmo."
+
+      - alert: SagaLatencySLOSlowBurn
+        expr: posnet_slo:saga_latency:error_ratio_rate6h > (6 * 0.05)
+        for: 15m
+        labels:
+          severity: warning
+          slo: saga_latency
+        annotations:
+          summary: "Quema lenta del error budget de latencia de saga"
+          description: "error ratio 6h = {{ $value | humanizePercentage }} (> 30%, 6x del budget 5%)."
+
+      - alert: TxSuccessSLOFastBurn
+        expr: posnet_slo:tx_success:error_ratio_rate1h > (14.4 * 0.01)
+        for: 5m
+        labels:
+          severity: warning
+          slo: tx_success
+        annotations:
+          summary: "Quema rápida del error budget de éxito de transacción"
+          description: "error ratio 1h = {{ $value | humanizePercentage }} (> 14.4%, 14.4x del budget 1%). Revisar acquirer INDETERMINATE y fallos NATS."
+
+      - alert: TxSuccessSLOSlowBurn
+        expr: posnet_slo:tx_success:error_ratio_rate6h > (6 * 0.01)
+        for: 15m
+        labels:
+          severity: warning
+          slo: tx_success
+        annotations:
+          summary: "Quema lenta del error budget de éxito de transacción"
+          description: "error ratio 6h = {{ $value | humanizePercentage }} (> 6%, 6x del budget 1%)."

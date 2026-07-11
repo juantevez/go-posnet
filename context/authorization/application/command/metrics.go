@@ -36,7 +36,8 @@ type Metrics struct {
 
 // latencyBuckets son fronteras en segundos apropiadas para la saga (~1s p50)
 // y el call al adquirente (~50ms), con buena resolución sub-segundo.
-var latencyBuckets = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10}
+// El bucket en 3 es el umbral del SLO de latencia de saga (95% < 3s).
+var latencyBuckets = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 3, 5, 10}
 
 // NewMetrics crea los instrumentos usando el MeterProvider global.
 // Debe llamarse después de observability.InitMeter().
