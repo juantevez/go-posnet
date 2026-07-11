@@ -62,7 +62,7 @@ func (s *Subscriber) Subscribe() error {
 		_, err := s.js.QueueSubscribe(
 			c.subject,
 			c.durable,
-			c.handler,
+			countedHandler(c.handler),
 			natsclient.Durable(c.durable),
 			natsclient.AckExplicit(),
 			natsclient.MaxDeliver(c.maxDeliv),
@@ -229,4 +229,13 @@ func (s *Subscriber) nak(ctx context.Context, msg *natsclient.Msg, err error, ev
 		slog.String("error", err.Error()),
 	)
 	_ = msg.Nak()
+}
+
+// countedHandler envuelve un MsgHandler para contabilizar cada mensaje entregado
+// en posnet_nats_messages_processed_total{subject}.
+func countedHandler(h natsclient.MsgHandler) natsclient.MsgHandler {
+	return func(m *natsclient.Msg) {
+		observability.RecordNATSProcessed(context.Background(), m.Subject)
+		h(m)
+	}
 }

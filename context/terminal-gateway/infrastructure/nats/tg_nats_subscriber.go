@@ -38,7 +38,7 @@ func (s *TG_Subscriber) Subscribe() error {
 	_, err := s.js.QueueSubscribe(
 		"posnet.auth.>",
 		"gateway-auth-consumer",
-		s.handleAuthResult,
+		countedHandler(s.handleAuthResult),
 		natsclient.Durable("gateway-auth-consumer"),
 		natsclient.AckExplicit(),
 		natsclient.MaxDeliver(3),
@@ -150,4 +150,13 @@ func (s *TG_Subscriber) nak(ctx context.Context, msg *natsclient.Msg, err error,
 		slog.String("error", err.Error()),
 	)
 	_ = msg.Nak()
+}
+
+// countedHandler envuelve un MsgHandler para contabilizar cada mensaje entregado
+// en posnet_nats_messages_processed_total{subject}.
+func countedHandler(h natsclient.MsgHandler) natsclient.MsgHandler {
+	return func(m *natsclient.Msg) {
+		observability.RecordNATSProcessed(context.Background(), m.Subject)
+		h(m)
+	}
 }

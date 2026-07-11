@@ -1,0 +1,142 @@
+{
+  "id": null,
+  "uid": "posnet-bc-detail",
+  "title": "POSNET — BC Detail",
+  "tags": ["posnet", "bc", "detail"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "bc",
+        "label": "Bounded Context",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": { "query": "label_values(go_goroutines, bc)", "refId": "bc" },
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".+",
+        "current": { "text": "All", "value": "$__all" },
+        "sort": 1
+      }
+    ]
+  },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "title": "NATS messages processed/s (por subject)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Throughput de mensajes NATS por subject. Detecta si un consumer está lento o detenido.",
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 15 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (subject) (rate(posnet_nats_messages_processed_total{bc=~\"$bc\"}[5m]))", "legendFormat": "{{subject}}" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Latencias p95 por operación",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "p95 de cada histograma de negocio del BC seleccionado. Solo aparecen las operaciones que ese BC emite.",
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum(rate(posnet_saga_duration_seconds_bucket{bc=~\"$bc\"}[5m])) by (le))", "legendFormat": "saga p95" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum(rate(posnet_acquirer_request_duration_seconds_bucket{bc=~\"$bc\"}[5m])) by (le))", "legendFormat": "acquirer p95" },
+        { "refId": "C", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum(rate(posnet_fraud_engine_duration_seconds_bucket{bc=~\"$bc\"}[5m])) by (le))", "legendFormat": "fraud engine p95" },
+        { "refId": "D", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum(rate(posnet_qr_e2e_duration_seconds_bucket{bc=~\"$bc\"}[5m])) by (le))", "legendFormat": "qr e2e p95" },
+        { "refId": "E", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum(rate(posnet_grpc_request_duration_seconds_bucket{bc=~\"$bc\"}[5m])) by (le))", "legendFormat": "notif delivery p95" },
+        { "refId": "F", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum(rate(posnet_settlement_batch_duration_seconds_bucket{bc=~\"$bc\"}[5m])) by (le))", "legendFormat": "batch close p95" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Pool pgx — conexiones",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Conexiones del pool por BC. Si acquired se acerca a max = bottleneck en Postgres.",
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "pgx_pool_acquired_conns{bc=~\"$bc\"}", "legendFormat": "{{bc}} acquired" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "pgx_pool_idle_conns{bc=~\"$bc\"}", "legendFormat": "{{bc}} idle" },
+        { "refId": "C", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "pgx_pool_total_conns{bc=~\"$bc\"}", "legendFormat": "{{bc}} total" },
+        { "refId": "D", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "pgx_pool_max_conns{bc=~\"$bc\"}", "legendFormat": "{{bc}} max" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Pool pgx — wait promedio por adquisición",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "rate(acquire_duration_seconds_total)/rate(acquire_count_total). Si > 100ms = pool insuficiente.",
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(pgx_pool_acquire_duration_seconds_total{bc=~\"$bc\"}[5m]) / clamp_min(rate(pgx_pool_acquire_count_total{bc=~\"$bc\"}[5m]), 0.0001)", "legendFormat": "{{bc}}" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Idempotency duplicates/s",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Eventos NATS duplicados descartados. Alto = AckWait corto o crash loops.",
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 15 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (bc) (rate(posnet_idempotency_duplicates_total{bc=~\"$bc\"}[5m]))", "legendFormat": "{{bc}}" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Goroutines activas",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Total de goroutines. Crecimiento sostenido sin descenso = leak.",
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "go_goroutines{bc=~\"$bc\"}", "legendFormat": "{{bc}}" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Errores/s por tipo",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "SUSTITUTO de error rate por tipo (ValidationError/TransientError/Panic, pendiente): rechazos, errores de acquirer y fallos de notificación.",
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 15, "stacking": { "mode": "normal" } } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (bc) (rate(posnet_transactions_rejected_total{bc=~\"$bc\"}[5m]))", "legendFormat": "rejected · {{bc}}" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (bc) (rate(posnet_acquirer_errors_total{bc=~\"$bc\"}[5m]))", "legendFormat": "acquirer_err · {{bc}}" },
+        { "refId": "C", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (bc) (rate(posnet_notifications_failed_total{bc=~\"$bc\"}[5m]))", "legendFormat": "notif_failed · {{bc}}" }
+      ]
+    }
+  ]
+}

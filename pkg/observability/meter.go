@@ -3,11 +3,13 @@ package observability
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -36,6 +38,27 @@ func InitMeter(ctx context.Context, serviceName string) (shutdown func(context.C
 // Uso: meter := observability.Meter("posnet.authorization")
 func Meter(name string) metric.Meter {
 	return otel.GetMeterProvider().Meter(name)
+}
+
+var (
+	natsProcessedOnce sync.Once
+	natsProcessed     metric.Int64Counter
+)
+
+// RecordNATSProcessed contabiliza un mensaje NATS entregado a un subscriber,
+// desglosado por subject. Nombre final: posnet_nats_messages_processed_total.
+// El label "bc" lo agrega Prometheus como target label. Nil-safe y lazy: se
+// inicializa en la primera llamada (tras InitMeter).
+func RecordNATSProcessed(ctx context.Context, subject string) {
+	natsProcessedOnce.Do(func() {
+		natsProcessed, _ = Meter("posnet.nats").Int64Counter(
+			"posnet_nats_messages_processed",
+			metric.WithDescription("Mensajes NATS entregados a los subscribers, por subject."),
+		)
+	})
+	if natsProcessed != nil {
+		natsProcessed.Add(ctx, 1, metric.WithAttributes(attribute.String("subject", subject)))
+	}
 }
 
 // MetricsHandler retorna el handler HTTP que expone las métricas en formato

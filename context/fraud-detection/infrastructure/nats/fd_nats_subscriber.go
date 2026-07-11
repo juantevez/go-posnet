@@ -38,7 +38,7 @@ func (s *FD_Subscriber) Subscribe() error {
 	_, err := s.js.QueueSubscribe(
 		events.SubjectFraudCheckRequested,
 		"fraud-check-consumer",
-		s.handleFraudCheckRequested,
+		countedHandler(s.handleFraudCheckRequested),
 		natsclient.Durable("fraud-check-consumer"),
 		natsclient.AckExplicit(),
 		natsclient.MaxDeliver(5),
@@ -123,4 +123,13 @@ func (s *FD_Subscriber) nak(ctx context.Context, msg *natsclient.Msg, err error,
 		slog.String("error", err.Error()),
 	)
 	_ = msg.Nak()
+}
+
+// countedHandler envuelve un MsgHandler para contabilizar cada mensaje entregado
+// en posnet_nats_messages_processed_total{subject}.
+func countedHandler(h natsclient.MsgHandler) natsclient.MsgHandler {
+	return func(m *natsclient.Msg) {
+		observability.RecordNATSProcessed(context.Background(), m.Subject)
+		h(m)
+	}
 }

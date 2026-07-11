@@ -6,6 +6,9 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"go.opentelemetry.io/otel/metric"
+
+	"github.com/juantevez/go-posnet/pkg/observability"
 )
 
 // idempotencyPool es el subconjunto de *pgxpool.Pool que necesita este
@@ -18,13 +21,23 @@ type idempotencyPool interface {
 // IdempotencyStore verifica y registra event_ids procesados en Postgres.
 // Cada BC tiene su propia tabla processed_events en su schema.
 type IdempotencyStore struct {
-	pool   idempotencyPool
-	schema string // ej: "authorization", "settlement"
+	pool       idempotencyPool
+	schema     string // ej: "authorization", "settlement"
+	duplicates metric.Int64Counter
 }
 
 // NewIdempotencyStore crea un IdempotencyStore para el schema del BC dado.
+//
+// Registra el counter posnet_idempotency_duplicates_total (el label "bc" lo
+// agrega Prometheus como target label). Debe construirse tras
+// observability.InitMeter(); si el meter no está listo, el counter queda nil
+// y las mediciones se omiten (nil-safe).
 func NewIdempotencyStore(pool idempotencyPool, schema string) *IdempotencyStore {
-	return &IdempotencyStore{pool: pool, schema: schema}
+	dup, _ := observability.Meter("posnet.idempotency").Int64Counter(
+		"posnet_idempotency_duplicates",
+		metric.WithDescription("Eventos NATS duplicados descartados por idempotencia."),
+	)
+	return &IdempotencyStore{pool: pool, schema: schema, duplicates: dup}
 }
 
 // IsAlreadyProcessed retorna true si el eventID ya fue procesado.
@@ -55,5 +68,9 @@ func (s *IdempotencyStore) TryMarkAsProcessed(ctx context.Context, tx pgx.Tx, ev
 	if err != nil {
 		return false, fmt.Errorf("idempotency: mark event_id %q: %w", eventID, err)
 	}
-	return res.RowsAffected() > 0, nil
+	inserted := res.RowsAffected() > 0
+	if !inserted && s.duplicates != nil {
+		s.duplicates.Add(ctx, 1)
+	}
+	return inserted, nil
 }

@@ -43,6 +43,9 @@ func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 	if err != nil {
 		return nil, fmt.Errorf("wire: init postgres pool: %w", err)
 	}
+	if err := pgutil.RegisterPoolMetrics(pool); err != nil {
+		return nil, fmt.Errorf("wire: register pgx pool metrics: %w", err)
+	}
 
 	if err := pgutil.Migrate(ctx, pool, cfg.Postgres.MigrationsDir); err != nil {
 		pool.Close()
