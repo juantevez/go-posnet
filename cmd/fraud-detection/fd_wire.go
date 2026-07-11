@@ -17,8 +17,10 @@ import (
 	natsinfra "github.com/juantevez/go-posnet/context/fraud-detection/infrastructure/nats"
 	pginfra "github.com/juantevez/go-posnet/context/fraud-detection/infrastructure/postgres"
 	"github.com/juantevez/go-posnet/pkg/natsutil"
+	"github.com/juantevez/go-posnet/pkg/observability"
 	"github.com/juantevez/go-posnet/pkg/pgutil"
 	nats "github.com/nats-io/nats.go"
+	"go.opentelemetry.io/otel/metric"
 )
 
 // app agrupa todos los componentes del servicio y sus recursos abiertos.
@@ -92,6 +94,12 @@ func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 	// El RuleEngine es el Domain Service más importante del BC.
 	// Recibe el timeout configurado desde config.Engine.EvalTimeout.
 	engine := service.NewRuleEngine(ruleRepo, historyRepo, cfg.Engine.EvalTimeout)
+	if timeouts, err := observability.Meter("posnet.fraud_detection").Int64Counter(
+		"posnet_fraud_engine_timeouts",
+		metric.WithDescription("Evaluaciones del motor terminadas por EvalTimeout."),
+	); err == nil {
+		engine.SetTimeoutCounter(timeouts)
+	}
 
 	// Precalentar el cache de reglas al arrancar para evitar latencia en la
 	// primera transacción. Si falla, el motor las cargará en la primera eval.

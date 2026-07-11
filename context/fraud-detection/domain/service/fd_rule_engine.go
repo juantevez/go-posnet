@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/metric"
+
 	"github.com/juantevez/go-posnet/context/fraud-detection/domain/aggregate"
 	"github.com/juantevez/go-posnet/context/fraud-detection/domain/entity"
 	"github.com/juantevez/go-posnet/context/fraud-detection/domain/repository"
@@ -36,6 +38,14 @@ type RuleEngine struct {
 	histRepo      repository.TransactionHistoryRepository
 	evalFns       map[string]ruleEvalFn // ruleID → función de evaluación
 	engineTimeout time.Duration
+	timeouts      metric.Int64Counter // posnet_fraud_engine_timeouts_total (opcional)
+}
+
+// SetTimeoutCounter inyecta el counter de timeouts del motor. Se llama desde el
+// wiring (tras InitMeter) para no acoplar el dominio al paquete observability.
+// Nil-safe: si no se inyecta, no se contabiliza.
+func (re *RuleEngine) SetTimeoutCounter(c metric.Int64Counter) {
+	re.timeouts = c
 }
 
 // NewRuleEngine construye el motor con sus repositorios.
@@ -102,6 +112,12 @@ func (re *RuleEngine) Evaluate(ctx context.Context, fc *aggregate.FraudCase) err
 		if result.err == nil {
 			evaluations = append(evaluations, result.evaluation)
 		}
+	}
+
+	// El motor agotó su presupuesto de tiempo (EvalTimeout): alguna regla no
+	// respondió a tiempo. Se contabiliza aunque el score parcial siga siendo válido.
+	if ctx.Err() == context.DeadlineExceeded && re.timeouts != nil {
+		re.timeouts.Add(ctx, 1)
 	}
 
 	if len(evaluations) == 0 {

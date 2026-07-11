@@ -53,6 +53,12 @@ groups:
           summary: "Sesiones atascadas sin aprobar (proxy)"
           description: "created - approved (5m) > 10 por 2m. Saga atascada: AuthApproved no llega. Reemplazar por posnet_sessions_processing_current cuando se instrumente el gauge."
 
-      # PostgresDeadlock (§6.1) requiere postgres_exporter (Fase 3):
-      #   expr: increase(pg_stat_database_deadlocks[1m]) > 0
-      # Se agregará cuando se deploye postgres_exporter.
+      # Deadlock en Postgres: contención en TX SERIALIZABLE (Settlement).
+      # Requiere postgres_exporter. Cualquier deadlock merece investigación.
+      - alert: PostgresDeadlock
+        expr: increase(pg_stat_database_deadlocks{datname="posnet"}[1m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Deadlock detectado en Postgres (db posnet)"
+          description: "increase(pg_stat_database_deadlocks[1m]) > 0. Contención probable en la TX SERIALIZABLE de Settlement."

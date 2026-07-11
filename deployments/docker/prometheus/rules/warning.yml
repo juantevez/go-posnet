@@ -1,0 +1,75 @@
+groups:
+  - name: posnet-warning
+    rules:
+      # Latencia de saga alta: p95 por encima de 3s.
+      # Investigar: fraud engine lento o acquirer con latencia alta.
+      - alert: LatenciaSagaAlta
+        expr: histogram_quantile(0.95, sum(rate(posnet_saga_duration_seconds_bucket[5m])) by (le)) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Saga p95 > 3s"
+          description: "histogram_quantile(0.95, saga_duration) > 3s por 5m ({{ $value | humanizeDuration }}). Revisar fraud engine y acquirer."
+
+      # Duplicados NATS altos: muchas redeliveries descartadas por idempotencia.
+      # Investigar: AckWait muy corto o crash loops en BCs.
+      - alert: DuplicadosNATSAltos
+        expr: sum(rate(posnet_idempotency_duplicates_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tasa de duplicados NATS elevada"
+          description: "rate(idempotency_duplicates[5m]) > 0.05 por 5m. AckWait muy corto o crash loops."
+
+      # Cache de reglas de fraude poco efectivo: hit ratio < 90%.
+      # Investigar: TTL del cache muy corto para el volumen de transacciones.
+      - alert: CacheRulesLow
+        expr: |
+          sum(rate(posnet_fraud_rules_cache_hits_total[5m]))
+          / (sum(rate(posnet_fraud_rules_cache_hits_total[5m]))
+             + sum(rate(posnet_fraud_rules_cache_misses_total[5m]))) < 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cache de reglas de fraude con hit ratio < 90%"
+          description: "hits/(hits+misses) < 0.9 por 10m ({{ $value | humanizePercentage }}). TTL del cache muy corto."
+
+      # Sospecha de goroutine leak: crecimiento neto sostenido.
+      # Investigar: goroutine no terminada en subscriber o handler.
+      # NOTA: se usa delta() y no increase() (como en el doc §6.2). go_goroutines
+      # es un GAUGE que sube y baja; increase() lo trata como counter y suma cada
+      # bajada como si fuera un reset → falsos positivos permanentes (300-480 en
+      # reposo). delta() = último - primero de la ventana, que es el crecimiento
+      # neto real y no se dispara por restarts.
+      - alert: GoroutineLeakSospechoso
+        expr: delta(go_goroutines{job="posnet-bcs"}[10m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Posible goroutine leak en {{ $labels.bc }}"
+          description: "increase(go_goroutines[10m]) > 100 por 5m en {{ $labels.bc }}. Revisar goroutines no terminadas."
+
+      # Heap creciente: proyección lineal supera 500MB en 1h.
+      # Investigar: posible memory leak — revisar pprof.
+      - alert: HeapCreciente
+        expr: predict_linear(go_memstats_heap_inuse_bytes{job="posnet-bcs"}[30m], 3600) > 500e6
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Heap con tendencia creciente en {{ $labels.bc }}"
+          description: "predict_linear(heap[30m], 1h) > 500MB en {{ $labels.bc }}. Posible memory leak, revisar pprof."
+
+      # Timeouts del motor de fraude: reglas con I/O lento (historyRepo).
+      - alert: EvalTimeoutsFraud
+        expr: rate(posnet_fraud_engine_timeouts_total[5m]) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Timeouts del motor de fraude elevados"
+          description: "rate(fraud_engine_timeouts[5m]) > 0.01 por 5m. Regla con I/O lento (historyRepo)."

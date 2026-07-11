@@ -1,0 +1,140 @@
+{
+  "id": null,
+  "uid": "posnet-infra-health",
+  "title": "POSNET — Infrastructure Health",
+  "tags": ["posnet", "infra", "sre"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Heap en uso por BC",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "go_memstats_heap_inuse_bytes por BC. Crecimiento sostenido = posible leak antes de OOM.",
+      "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "go_memstats_heap_inuse_bytes{job=\"posnet-bcs\"}", "legendFormat": "{{bc}}" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "CPU por BC (cores)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "rate(process_cpu_seconds_total[5m]) por BC. Identifica BCs que requieren más recursos.",
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(process_cpu_seconds_total{job=\"posnet-bcs\"}[5m])", "legendFormat": "{{bc}}" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "GC pause máx por BC",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "go_gc_duration_seconds{quantile=\"1\"} (pausa máxima; el summary Go no expone p99). > 10ms impacta la latencia de requests.",
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "go_gc_duration_seconds{job=\"posnet-bcs\",quantile=\"1\"}", "legendFormat": "{{bc}}" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Postgres pool saturation % por BC",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "acquired/max por BC. > 80% es riesgo (alerta Crítica PoolPostgresAgotado dispara en 95%).",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent", "min": 0, "max": 100,
+          "custom": { "drawStyle": "line", "fillOpacity": 10 },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 80 }, { "color": "red", "value": 95 } ] }
+        },
+        "overrides": []
+      },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "pgx_pool_acquired_conns / pgx_pool_max_conns * 100", "legendFormat": "{{bc}}" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Deadlocks Postgres (5m)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "increase(pg_stat_database_deadlocks[5m]) en db posnet. Cualquier valor > 0 requiere investigación (dispara alerta Crítica).",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "bars", "fillOpacity": 60 },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] }
+        },
+        "overrides": []
+      },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "increase(pg_stat_database_deadlocks{datname=\"posnet\"}[5m])", "legendFormat": "deadlocks" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Locks Postgres por tipo",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "pg_locks_count por modo. Warning > 50 (contención).",
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (mode) (pg_locks_count{datname=\"posnet\"})", "legendFormat": "{{mode}}" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Reinicios de contenedor por BC (1h)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "PROXY de container restarts: changes(process_start_time_seconds[1h]) por BC. Indica crashes u OOM kills.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "bars", "fillOpacity": 60 },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] }
+        },
+        "overrides": []
+      },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "changes(process_start_time_seconds{job=\"posnet-bcs\"}[1h])", "legendFormat": "{{bc}}" }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "NATS throughput por subject (stream lag: pendiente NATS exporter)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "SUSTITUTO del stream lag (§5.4, requiere NATS exporter): throughput de mensajes procesados por subject. Un consumer detenido se ve como caída a 0.",
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (subject) (rate(posnet_nats_messages_processed_total[5m]))", "legendFormat": "{{subject}}" }
+      ]
+    }
+  ]
+}

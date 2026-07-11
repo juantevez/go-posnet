@@ -33,6 +33,19 @@ services:
       retries: 10
       start_period: 10s
 
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: posnet-postgres-exporter
+    restart: unless-stopped
+    networks: [posnet]
+    ports:
+      - "9187:9187"
+    environment:
+      DATA_SOURCE_NAME: "postgresql://posnet:posnet123@postgres:5432/posnet?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   nats:
     image: nats:2.10-alpine
     container_name: posnet-nats

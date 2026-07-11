@@ -11,11 +11,14 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"go.opentelemetry.io/otel/metric"
+
 	"github.com/juantevez/go-posnet/context/fraud-detection/domain/aggregate"
 	"github.com/juantevez/go-posnet/context/fraud-detection/domain/entity"
 	"github.com/juantevez/go-posnet/context/fraud-detection/domain/valueobject"
 	"github.com/juantevez/go-posnet/pkg/domain"
 	pkgerrors "github.com/juantevez/go-posnet/pkg/errors"
+	"github.com/juantevez/go-posnet/pkg/observability"
 )
 
 // pgxPool es el subconjunto de *pgxpool.Pool que los repositorios de este
@@ -173,10 +176,18 @@ type FraudRuleRepo struct {
 	mu       sync.RWMutex
 	cached   []*entity.FraudRule
 	cachedAt time.Time
+
+	cacheHits   metric.Int64Counter // posnet_fraud_rules_cache_hits_total
+	cacheMisses metric.Int64Counter // posnet_fraud_rules_cache_misses_total
 }
 
 func NewFraudRuleRepo(pool pgxPool, cacheTTL time.Duration) *FraudRuleRepo {
-	return &FraudRuleRepo{pool: pool, cacheTTL: cacheTTL}
+	m := observability.Meter("posnet.fraud_detection")
+	hits, _ := m.Int64Counter("posnet_fraud_rules_cache_hits",
+		metric.WithDescription("Cache hits del ruleRepo (regla servida desde memoria)."))
+	misses, _ := m.Int64Counter("posnet_fraud_rules_cache_misses",
+		metric.WithDescription("Cache misses del ruleRepo (fuerza I/O a Postgres)."))
+	return &FraudRuleRepo{pool: pool, cacheTTL: cacheTTL, cacheHits: hits, cacheMisses: misses}
 }
 
 func (r *FraudRuleRepo) FindAllActive(ctx context.Context) ([]*entity.FraudRule, error) {
@@ -184,11 +195,17 @@ func (r *FraudRuleRepo) FindAllActive(ctx context.Context) ([]*entity.FraudRule,
 	if r.cached != nil && time.Since(r.cachedAt) < r.cacheTTL {
 		rules := r.cached
 		r.mu.RUnlock()
+		if r.cacheHits != nil {
+			r.cacheHits.Add(ctx, 1)
+		}
 		return rules, nil
 	}
 	r.mu.RUnlock()
 
-	// Cache expirado — recargar desde Postgres
+	// Cache expirado (miss) — recargar desde Postgres
+	if r.cacheMisses != nil {
+		r.cacheMisses.Add(ctx, 1)
+	}
 	rules, err := r.loadFromDB(ctx)
 	if err != nil {
 		return nil, err
