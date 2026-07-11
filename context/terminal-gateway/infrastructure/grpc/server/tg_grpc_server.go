@@ -25,6 +25,17 @@ type TerminalGatewayServer struct {
 	tgv1.UnimplementedTerminalGatewayServiceServer
 	notifier     service.TerminalNotifier
 	queryHandler *query.SessionQueryHandler
+
+	// grpcServer es la referencia al *grpc.Server real de la librería,
+	// asignada dentro de Start(). Se necesita acá para poder exponer
+	// GracefulStop() sin que wire.go tenga que conocer el tipo grpc.Server.
+	grpcServer *grpc.Server
+
+	// ready se cierra una vez que grpcServer ya fue asignado, para que
+	// GracefulStop() nunca lea el campo antes de que Start() termine de
+	// inicializarlo (Start corre en su propia goroutine, lanzada con
+	// `go func(){ grpcserver.Start(...) }()` desde wire.go).
+	ready chan struct{}
 }
 
 func NewTerminalGatewayServer(
@@ -34,6 +45,7 @@ func NewTerminalGatewayServer(
 	return &TerminalGatewayServer{
 		notifier:     notifier,
 		queryHandler: queryHandler,
+		ready:        make(chan struct{}),
 	}
 }
 
@@ -48,8 +60,29 @@ func Start(srv *TerminalGatewayServer, grpcPort int) error {
 	)
 	tgv1.RegisterTerminalGatewayServiceServer(grpcServer, srv)
 
+	srv.grpcServer = grpcServer
+	close(srv.ready) // recién ahora GracefulStop() puede usar el campo con seguridad
+
 	slog.Info("Terminal Gateway gRPC server listening", slog.Int("port", grpcPort))
 	return grpcServer.Serve(listener)
+}
+
+// GracefulStop detiene el servidor gRPC subyacente: deja de aceptar
+// conexiones nuevas y espera a que las RPCs en curso terminen. Es seguro
+// llamarlo aunque Start() todavía no haya terminado de inicializar el
+// server (bloquea en <-s.ready hasta que esté listo).
+//
+// Caso borde: si el listener de Start() falló (net.Listen devolvió error),
+// Start() retorna antes de asignar grpcServer y ready nunca se cierra —
+// GracefulStop() quedaría bloqueado para siempre. En la práctica no es
+// un problema porque wire() ya falla el arranque completo del servicio
+// si el puerto gRPC no está disponible, así que nunca se llega a invocar
+// close()/GracefulStop() con un listener roto.
+func (s *TerminalGatewayServer) GracefulStop() {
+	<-s.ready
+	if s.grpcServer != nil {
+		s.grpcServer.GracefulStop()
+	}
 }
 
 // SendReceipt entrega el comprobante al WebSocket del terminal.

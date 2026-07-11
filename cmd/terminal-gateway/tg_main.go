@@ -66,6 +66,10 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("wire dependencies: %w", err)
 	}
+	// Defer de seguridad: si algo falla más abajo (ej. app.start devuelve
+	// error) y retornamos antes de llegar al shutdown explícito, igual se
+	// liberan los recursos. app.close() es idempotente (sync.Once), así que
+	// no hay problema si además se llama explícitamente más abajo.
 	defer app.close()
 
 	// ── 7. Arrancar servicios ──────────────────────────────────────────────────
@@ -85,7 +89,13 @@ func run() error {
 	<-quit
 
 	log.Info("shutdown signal received — stopping services")
-	cancel()
+	cancel() // avisa a outboxRelay y al cleaner (vía ctx.Done()) que deben parar
+
+	// Llamada explícita y bloqueante: espera a que gRPC/HTTP dejen de aceptar
+	// trabajo nuevo, a que los jobs de background salgan de su loop, y recién
+	// ahí cierra NATS y el pool de Postgres. El defer de arriba queda como
+	// no-op gracias al sync.Once dentro de close().
+	app.close()
 
 	log.Info("terminal-gateway BC stopped cleanly")
 	return nil

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -31,6 +32,17 @@ type app struct {
 	grpcSrv     *grpcserver.TerminalGatewayServer
 	httpSrv     *http.Server
 	// wsSrv   *websocket.Server  ← agregar cuando se implemente infrastructure/websocket/
+
+	// wg sincroniza el apagado de los jobs de background (outbox relay,
+	// cleaner de sesiones) con el cierre de recursos compartidos (pool, NATS).
+	// Sin esto, close() puede cerrar el pool mientras una goroutine todavía
+	// está a mitad de una query.
+	wg sync.WaitGroup
+
+	// closeOnce garantiza que close() sea idempotente: puede llamarse
+	// explícitamente en el flujo normal de shutdown Y desde un defer de
+	// seguridad, sin liberar recursos dos veces.
+	closeOnce sync.Once
 }
 
 // wire construye el grafo de dependencias completo del BC Terminal Gateway.
@@ -137,6 +149,9 @@ func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 }
 
 // start arranca todos los servidores en goroutines independientes.
+// Los jobs de background (outbox relay, cleaner) se registran en el
+// WaitGroup del app para que close() pueda esperar su finalización real
+// antes de liberar recursos compartidos (pool, NATS).
 func (a *app) start(ctx context.Context) error {
 	// NATS consumers
 	if err := a.subscriber.Subscribe(); err != nil {
@@ -164,11 +179,19 @@ func (a *app) start(ctx context.Context) error {
 	// TODO: go func() { wsSrv.ListenAndServeTLS(cfg.WSPort, cfg.TLS) }()
 
 	// Outbox relay — publica eventos pendientes a NATS con reintentos automáticos
-	go a.outboxRelay.Run(ctx)
+	a.wg.Add(1)
+	go func() {
+		defer a.wg.Done()
+		a.outboxRelay.Run(ctx)
+	}()
 	slog.Info("outbox relay active")
 
 	// Job de limpieza de sesiones expiradas
-	go a.runExpiredSessionsCleaner(ctx)
+	a.wg.Add(1)
+	go func() {
+		defer a.wg.Done()
+		a.runExpiredSessionsCleaner(ctx)
+	}()
 	slog.Info("expired sessions cleaner active")
 
 	return nil
@@ -202,23 +225,49 @@ func (a *app) runExpiredSessionsCleaner(ctx context.Context) {
 }
 
 // close libera todos los recursos en orden inverso al de creación.
+//
+// Orden de apagado:
+//  1. Dejar de aceptar trabajo nuevo: gRPC GracefulStop + HTTP Shutdown.
+//     Ambos bloquean hasta drenar las requests/streams en vuelo.
+//  2. Esperar a que los jobs de background (outbox relay, cleaner) salgan
+//     de su loop por ctx.Done() — vía wg.Wait().
+//  3. Recién ahí cerrar recursos compartidos (NATS, pool de Postgres),
+//     que ya no tienen ningún consumidor activo.
+//
+// Envuelto en sync.Once porque se llama tanto explícitamente en el flujo
+// normal de shutdown (main.go) como desde un defer de seguridad — sin el
+// Once, correría dos veces y pool.Close()/natsConn.Close() sobre un
+// recurso ya cerrado.
 func (a *app) close() {
-	slog.Info("closing resources")
+	a.closeOnce.Do(func() {
+		slog.Info("closing resources")
 
-	if a.httpSrv != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		_ = a.httpSrv.Shutdown(ctx)
-	}
+		if a.grpcSrv != nil {
+			slog.Info("stopping gRPC server")
+			a.grpcSrv.GracefulStop()
+		}
 
-	if a.natsConn != nil {
-		_ = a.natsConn.Drain()
-		a.natsConn.Close()
-	}
+		if a.httpSrv != nil {
+			slog.Info("stopping HTTP server")
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := a.httpSrv.Shutdown(shutdownCtx); err != nil {
+				slog.Error("HTTP graceful shutdown failed", slog.String("error", err.Error()))
+			}
+		}
 
-	if a.pool != nil {
-		a.pool.Close()
-	}
+		slog.Info("waiting for background jobs to finish")
+		a.wg.Wait()
 
-	slog.Info("all resources closed")
+		if a.natsConn != nil {
+			_ = a.natsConn.Drain()
+			a.natsConn.Close()
+		}
+
+		if a.pool != nil {
+			a.pool.Close()
+		}
+
+		slog.Info("all resources closed")
+	})
 }
