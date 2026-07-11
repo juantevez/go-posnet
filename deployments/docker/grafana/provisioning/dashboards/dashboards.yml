@@ -1,0 +1,14 @@
+apiVersion: 1
+
+providers:
+  - name: posnet
+    orgId: 1
+    folder: POSNET
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      # Los JSON de dashboards se leen desde esta ruta dentro del contenedor.
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

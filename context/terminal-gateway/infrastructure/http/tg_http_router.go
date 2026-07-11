@@ -25,17 +25,10 @@ func NewRouter(
 	qr := NewQRHandler(sessionService, queryHandler)
 	qr.RegisterQRRoutes(mux)
 
-	mux.Handle("GET /metrics", metricsHandler())
+	mux.Handle("GET /metrics", observability.MetricsHandler())
 
 	// CORS antes de observability para que el preflight OPTIONS no quede bloqueado
 	return corsMiddleware(observability.HTTPMiddleware(recoverMiddleware(mux)))
-}
-
-func metricsHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("# Prometheus metrics endpoint\n"))
-	})
 }
 
 // corsMiddleware permite requests desde cualquier origen.

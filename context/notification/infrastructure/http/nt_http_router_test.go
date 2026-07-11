@@ -13,6 +13,7 @@ import (
 	"github.com/juantevez/go-posnet/context/notification/domain/valueobject"
 	"github.com/juantevez/go-posnet/pkg/domain"
 	"github.com/juantevez/go-posnet/pkg/natsutil"
+	"github.com/juantevez/go-posnet/pkg/observability"
 )
 
 func newRouterFor(repo repository.NotificationRepository, pool *fakePool) http.Handler {
@@ -103,7 +104,7 @@ func TestNewRouter_UnknownRouteReturns404(t *testing.T) {
 }
 
 func TestMetricsHandler(t *testing.T) {
-	handler := metricsHandler()
+	handler := observability.MetricsHandler()
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	rec := httptest.NewRecorder()
@@ -112,7 +113,7 @@ func TestMetricsHandler(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
-	if !strings.Contains(rec.Body.String(), "Prometheus metrics endpoint") {
-		t.Errorf("body = %q, want it to contain %q", rec.Body.String(), "Prometheus metrics endpoint")
+	if !strings.Contains(rec.Body.String(), "go_goroutines") {
+		t.Errorf("body should expose Go runtime metrics, got %q", rec.Body.String())
 	}
 }

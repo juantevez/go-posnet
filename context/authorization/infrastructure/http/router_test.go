@@ -9,6 +9,7 @@ import (
 
 	"github.com/juantevez/go-posnet/context/authorization/application/port"
 	"github.com/juantevez/go-posnet/pkg/domain"
+	"github.com/juantevez/go-posnet/pkg/observability"
 )
 
 func TestNewRouter_Routes(t *testing.T) {
@@ -83,7 +84,7 @@ func TestNewRouter_UnknownRouteReturns404(t *testing.T) {
 }
 
 func TestMetricsHandler(t *testing.T) {
-	handler := metricsHandler()
+	handler := observability.MetricsHandler()
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	rec := httptest.NewRecorder()
@@ -92,7 +93,9 @@ func TestMetricsHandler(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
-	if !strings.Contains(rec.Body.String(), "Prometheus metrics endpoint") {
-		t.Errorf("body = %q, want it to contain %q", rec.Body.String(), "Prometheus metrics endpoint")
+	// El handler sirve el registry default de Prometheus, que siempre
+	// incluye las métricas base del runtime Go (go_goroutines, etc.).
+	if !strings.Contains(rec.Body.String(), "go_goroutines") {
+		t.Errorf("body should expose Go runtime metrics, got %q", rec.Body.String())
 	}
 }

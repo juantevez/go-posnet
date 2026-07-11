@@ -1,0 +1,26 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Prometheus se scrapea a sí mismo (útil para validar que está vivo).
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Los 5 Bounded Contexts de posnet exponen /metrics vía el exporter
+  # Prometheus de OpenTelemetry (pull). Se resuelven por nombre de servicio
+  # dentro de la red compose "posnet".
+  - job_name: posnet-bcs
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["authorization:8080"]
+        labels: { bc: authorization }
+      - targets: ["terminal-gateway:8081"]
+        labels: { bc: terminal-gateway }
+      - targets: ["fraud-detection:8083"]
+        labels: { bc: fraud-detection }
+      - targets: ["settlement:8084"]
+        labels: { bc: settlement }
+      - targets: ["notification:8085"]
+        labels: { bc: notification }

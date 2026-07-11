@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"net/http"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
@@ -33,6 +36,22 @@ func InitMeter(ctx context.Context, serviceName string) (shutdown func(context.C
 // Uso: meter := observability.Meter("posnet.authorization")
 func Meter(name string) metric.Meter {
 	return otel.GetMeterProvider().Meter(name)
+}
+
+// MetricsHandler retorna el handler HTTP que expone las métricas en formato
+// Prometheus para el endpoint /metrics de cada BC.
+//
+// Sirve el registry default de Prometheus, que incluye:
+//   - Las métricas de negocio de OpenTelemetry (el exporter creado en
+//     InitMeter se registra en el registry default).
+//   - Las métricas base del runtime Go y del proceso (go_goroutines,
+//     go_memstats_*, process_cpu_seconds_total, ...), auto-registradas
+//     por client_golang.
+//
+// InitMeter debe haberse llamado antes para que las métricas de negocio
+// aparezcan; las métricas Go base están disponibles sin InitMeter.
+func MetricsHandler() http.Handler {
+	return promhttp.Handler()
 }
 
 // ─── Métricas estándar del sistema ───────────────────────────────────────────

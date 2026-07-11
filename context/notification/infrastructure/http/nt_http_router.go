@@ -20,14 +20,7 @@ func NewRouter(
 	h := NewHandler(queryHandler, adminHandler, pool)
 	h.RegisterRoutes(mux)
 
-	mux.Handle("GET /metrics", metricsHandler())
+	mux.Handle("GET /metrics", observability.MetricsHandler())
 
 	return observability.HTTPMiddleware(recoverMiddleware(mux))
-}
-
-func metricsHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("# Prometheus metrics endpoint\n"))
-	})
 }
