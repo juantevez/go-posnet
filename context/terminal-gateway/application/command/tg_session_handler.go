@@ -31,6 +31,12 @@ type SessionHandler struct {
 	idempotency  *natsutil.IdempotencyStore
 	outbox       *outbox.Store
 	pool         pgutil.PgxPool
+	metrics      *Metrics // opcional; nil = sin instrumentación (tests)
+}
+
+// SetMetrics inyecta los instrumentos de negocio (desde el wiring, tras InitMeter).
+func (h *SessionHandler) SetMetrics(m *Metrics) {
+	h.metrics = m
 }
 
 // NewSessionHandler construye el handler con todas sus dependencias.
@@ -111,6 +117,8 @@ func (h *SessionHandler) CreateSession(ctx context.Context, cmd port.CreateSessi
 		observability.RecordError(ctx, err)
 		return nil, fmt.Errorf("CreateSession: save session: %w", err)
 	}
+
+	h.metrics.RecordCreated(ctx)
 
 	// Notificar al terminal (QR en pantalla o NFC activo)
 	if err := h.notifier.NotifySessionCreated(ctx, session); err != nil {
@@ -224,6 +232,7 @@ func (h *SessionHandler) ApplyApproval(ctx context.Context, cmd port.ApplyApprov
 	}
 
 	if processed {
+		h.metrics.RecordApproved(ctx, session.CreatedAt())
 		if err := h.notifier.NotifyResult(ctx, session); err != nil {
 			observability.FromContext(ctx).Error("failed to notify terminal of approval",
 				slog.String("transaction_id", cmd.TransactionID),

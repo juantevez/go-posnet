@@ -27,6 +27,12 @@ type EvaluateTransactionHandler struct {
 	publisher     service.EventPublisher
 	idempotency   *natsutil.IdempotencyStore
 	pool          pgutil.PgxPool
+	metrics       *Metrics // opcional; nil = sin instrumentación (tests)
+}
+
+// SetMetrics inyecta los instrumentos de negocio (desde el wiring, tras InitMeter).
+func (h *EvaluateTransactionHandler) SetMetrics(m *Metrics) {
+	h.metrics = m
 }
 
 // NewEvaluateTransactionHandler construye el handler con sus dependencias.
@@ -98,7 +104,10 @@ func (h *EvaluateTransactionHandler) EvaluateTransaction(
 	}
 
 	// ── 3. Ejecutar el motor de reglas ───────────────────────────────────────
-	if err := h.engine.Evaluate(ctx, fc); err != nil {
+	engineStart := time.Now()
+	err = h.engine.Evaluate(ctx, fc)
+	h.metrics.RecordEngineDuration(ctx, time.Since(engineStart))
+	if err != nil {
 		// Si el motor falla completamente, publicar un score neutral (REVIEW)
 		// para no bloquear la transacción por un problema de infraestructura.
 		log.Error("rule engine failed — using neutral score",
@@ -116,6 +125,11 @@ func (h *EvaluateTransactionHandler) EvaluateTransaction(
 		slog.Int("score", fc.Score().Score()),
 		slog.String("decision", fc.Score().Decision().String()),
 		slog.Any("rules_hit", fc.Score().RulesHit()),
+	)
+	h.metrics.RecordEvaluation(ctx,
+		fc.Score().Decision().String(),
+		fc.Score().Score(),
+		fc.Score().RulesHit(),
 	)
 
 	// ── 4. Persistir + marcar idempotencia (atómico) ─────────────────────────

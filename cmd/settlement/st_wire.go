@@ -96,6 +96,11 @@ func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 		pool,
 		cfg.Settlement.MDRPercent,
 	)
+	settlementMetrics, err := command.NewMetrics()
+	if err != nil {
+		return nil, fmt.Errorf("init settlement metrics: %w", err)
+	}
+	batchHandler.SetMetrics(settlementMetrics)
 	adminHandler := command.NewAdminHandler(batchRepo, processor)
 	queryHandler := query.NewBatchQueryHandler(batchRepo)
 

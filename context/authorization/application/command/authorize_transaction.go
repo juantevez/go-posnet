@@ -6,8 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-
-	//"time"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/juantevez/go-posnet/context/authorization/application/port"
@@ -34,6 +33,14 @@ type AuthorizationHandler struct {
 	publisher   service.EventPublisher
 	idempotency *natsutil.IdempotencyStore
 	pool        pgutil.PgxPool
+	metrics     *Metrics // opcional; nil = sin instrumentación (tests)
+}
+
+// SetMetrics inyecta los instrumentos de negocio. Se llama desde el wiring
+// (cmd/authorization) tras InitMeter. Mantener la firma de NewAuthorizationHandler
+// intacta evita tocar los tests que construyen el handler.
+func (h *AuthorizationHandler) SetMetrics(m *Metrics) {
+	h.metrics = m
 }
 
 // NewAuthorizationHandler construye el handler con todas sus dependencias.
@@ -149,6 +156,7 @@ func (h *AuthorizationHandler) AuthorizeTransaction(ctx context.Context, cmd por
 	if !published {
 		return nil
 	}
+	h.metrics.RecordReceived(ctx)
 
 	// ── Paso 5: Publicar FraudCheckRequested ─────────────────────────────────
 	if err := h.publisher.PublishFraudCheckRequested(ctx, tx); err != nil {
@@ -231,8 +239,11 @@ func (h *AuthorizationHandler) callAcquirer(
 	ctx, span := observability.StartSpan(ctx, "command.callAcquirer")
 	defer span.End()
 
+	acquirerStart := time.Now()
 	response, err := h.acquirer.Authorize(ctx, tx)
 	if err != nil {
+		h.metrics.RecordAcquirerDuration(ctx, time.Since(acquirerStart), "error")
+		h.metrics.RecordAcquirerError(ctx)
 		log.Warn("acquirer error — marking transaction as indeterminate",
 			slog.String("error", err.Error()))
 		if markErr := tx.MarkIndeterminate(); markErr != nil {
@@ -240,6 +251,11 @@ func (h *AuthorizationHandler) callAcquirer(
 		}
 		_ = h.repo.Save(ctx, tx)
 		return nil
+	}
+	if response.IsApproved() {
+		h.metrics.RecordAcquirerDuration(ctx, time.Since(acquirerStart), "approved")
+	} else {
+		h.metrics.RecordAcquirerDuration(ctx, time.Since(acquirerStart), "declined")
 	}
 
 	if response.IsApproved() {
@@ -267,6 +283,8 @@ func (h *AuthorizationHandler) callAcquirer(
 
 	// Publicar resultado a NATS (fuera de la transacción Postgres)
 	if tx.State() == valueobject.StateApproved {
+		h.metrics.RecordApproved(ctx)
+		h.metrics.RecordSagaDuration(ctx, tx.ReceivedAt(), "approved")
 		if err := h.publisher.PublishApproved(ctx, tx); err != nil {
 			// Loguear pero no fallar — la transacción ya está en Postgres.
 			// El proceso de reconciliación puede republicar si es necesario.
@@ -274,12 +292,15 @@ func (h *AuthorizationHandler) callAcquirer(
 		}
 		log.Info("transaction approved", slog.String("auth_code", tx.AuthCode().String()))
 	} else {
+		rc := tx.RejectionCode()
+		h.metrics.RecordRejected(ctx, rc.Code(), string(rc.Source()))
+		h.metrics.RecordSagaDuration(ctx, tx.ReceivedAt(), "rejected")
 		if err := h.publisher.PublishRejected(ctx, tx); err != nil {
 			log.Error("failed to publish rejection event", slog.String("error", err.Error()))
 		}
 		log.Info("transaction rejected",
-			slog.String("rejection_code", tx.RejectionCode().Code()),
-			slog.String("rejection_source", string(tx.RejectionCode().Source())),
+			slog.String("rejection_code", rc.Code()),
+			slog.String("rejection_source", string(rc.Source())),
 		)
 	}
 
@@ -296,6 +317,9 @@ func (h *AuthorizationHandler) persistAndPublishRejection(
 	if err := h.repo.Save(ctx, tx); err != nil {
 		return fmt.Errorf("persistAndPublishRejection: %w", err)
 	}
+	rc := tx.RejectionCode()
+	h.metrics.RecordRejected(ctx, rc.Code(), string(rc.Source()))
+	h.metrics.RecordSagaDuration(ctx, tx.ReceivedAt(), "rejected")
 	if err := h.publisher.PublishRejected(ctx, tx); err != nil {
 		log.Error("failed to publish rejection", slog.String("error", err.Error()))
 	}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/juantevez/go-posnet/context/notification/application/port"
@@ -29,6 +30,12 @@ type NotifyHandler struct {
 	publisher   service.EventPublisher
 	idempotency *natsutil.IdempotencyStore
 	pool        pgutil.PgxPool
+	metrics     *Metrics // opcional; nil = sin instrumentación (tests)
+}
+
+// SetMetrics inyecta los instrumentos de negocio (desde el wiring, tras InitMeter).
+func (h *NotifyHandler) SetMetrics(m *Metrics) {
+	h.metrics = m
 }
 
 func NewNotifyHandler(
@@ -260,9 +267,12 @@ func (h *NotifyHandler) dispatch(ctx context.Context, n *aggregate.Notification)
 	var delivered bool
 	var httpStatus int
 	var dispatchErr error
+	var channel string
 
+	deliveryStart := time.Now()
 	switch n.Channel() {
 	case valueobject.ChannelTerminalWebSocket:
+		channel = "terminal"
 		var reason string
 		delivered, reason, dispatchErr = h.terminal.SendReceipt(ctx, n)
 		if !delivered && dispatchErr == nil {
@@ -270,6 +280,7 @@ func (h *NotifyHandler) dispatch(ctx context.Context, n *aggregate.Notification)
 		}
 
 	case valueobject.ChannelWebhook:
+		channel = "webhook"
 		httpStatus, dispatchErr = h.webhook.Dispatch(ctx, n)
 		delivered = dispatchErr == nil && httpStatus >= 200 && httpStatus < 300
 		if !delivered && dispatchErr == nil {
@@ -280,6 +291,7 @@ func (h *NotifyHandler) dispatch(ctx context.Context, n *aggregate.Notification)
 		log.Warn("unknown channel — skipping dispatch")
 		return
 	}
+	h.metrics.RecordDelivery(ctx, channel, delivered, time.Since(deliveryStart))
 
 	// Actualizar el aggregate según el resultado
 	var updateErr error

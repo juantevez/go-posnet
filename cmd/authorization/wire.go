@@ -95,6 +95,11 @@ func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 		idempotency,
 		pool,
 	)
+	authMetrics, err := command.NewMetrics()
+	if err != nil {
+		return nil, fmt.Errorf("init authorization metrics: %w", err)
+	}
+	authHandler.SetMetrics(authMetrics)
 	queryHandler := query.NewTransactionQueryHandler(txRepo)
 
 	// ── Adaptadores de entrada ─────────────────────────────────────────────────

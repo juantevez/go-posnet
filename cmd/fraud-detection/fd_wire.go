@@ -108,6 +108,11 @@ func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 		idempotency,
 		pool,
 	)
+	fraudMetrics, err := command.NewMetrics()
+	if err != nil {
+		return nil, fmt.Errorf("init fraud metrics: %w", err)
+	}
+	evaluateHandler.SetMetrics(fraudMetrics)
 	adminHandler := command.NewAdminHandler(ruleRepo, fraudCaseRepo)
 	queryHandler := query.NewFraudQueryHandler(fraudCaseRepo, ruleRepo)
 

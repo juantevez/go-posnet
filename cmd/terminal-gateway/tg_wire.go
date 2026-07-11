@@ -31,6 +31,7 @@ type app struct {
 	outboxRelay *outbox.Relay
 	grpcSrv     *grpcserver.TerminalGatewayServer
 	httpSrv     *http.Server
+	metrics     *command.Metrics
 	// wsSrv   *websocket.Server  ← agregar cuando se implemente infrastructure/websocket/
 
 	// wg sincroniza el apagado de los jobs de background (outbox relay,
@@ -114,6 +115,11 @@ func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 		outboxStore,
 		pool,
 	)
+	tgMetrics, err := command.NewMetrics()
+	if err != nil {
+		return nil, fmt.Errorf("init terminal-gateway metrics: %w", err)
+	}
+	sessionHandler.SetMetrics(tgMetrics)
 	queryHandler := query.NewSessionQueryHandler(sessionRepo)
 
 	// ── Adaptadores de entrada ─────────────────────────────────────────────────
@@ -145,6 +151,7 @@ func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 		outboxRelay: outboxRelay,
 		grpcSrv:     grpcSrv,
 		httpSrv:     httpSrv,
+		metrics:     tgMetrics,
 	}, nil
 }
 
@@ -218,6 +225,7 @@ func (a *app) runExpiredSessionsCleaner(ctx context.Context) {
 				continue
 			}
 			if deleted > 0 {
+				a.metrics.RecordExpired(ctx, deleted)
 				slog.Info("expired sessions cleaned", slog.Int64("count", deleted))
 			}
 		}

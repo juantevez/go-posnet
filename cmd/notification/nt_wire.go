@@ -115,6 +115,11 @@ func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 		idempotency,
 		pool,
 	)
+	notifMetrics, err := command.NewMetrics()
+	if err != nil {
+		return nil, fmt.Errorf("init notification metrics: %w", err)
+	}
+	notifyHandler.SetMetrics(notifMetrics)
 	adminHandler := command.NewAdminHandler(notifRepo, notifyHandler)
 	queryHandler := query.NewNotificationQueryHandler(notifRepo)
 

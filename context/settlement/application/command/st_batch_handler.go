@@ -29,6 +29,12 @@ type BatchHandler struct {
 	idempotency *natsutil.IdempotencyStore
 	pool        pgutil.PgxPool
 	mdrPercent  float64
+	metrics     *Metrics // opcional; nil = sin instrumentación (tests)
+}
+
+// SetMetrics inyecta los instrumentos de negocio (desde el wiring, tras InitMeter).
+func (h *BatchHandler) SetMetrics(m *Metrics) {
+	h.metrics = m
 }
 
 func NewBatchHandler(
@@ -105,6 +111,7 @@ func (h *BatchHandler) RegisterApproval(ctx context.Context, cmd port.RegisterAp
 	}
 
 	if batchID != "" {
+		h.metrics.RecordAuthApproved(ctx)
 		log.Info("transaction registered in batch",
 			slog.String("batch_id", batchID),
 			slog.Int64("amount_cents", cmd.AmountCents),
@@ -135,7 +142,8 @@ func (h *BatchHandler) RegisterReversal(ctx context.Context, cmd port.RegisterRe
 		completedAt = time.Now().UTC()
 	}
 
-	return pgutil.WithReadCommitted(ctx, h.pool, func(tx pgx.Tx) error {
+	var registered bool
+	err = pgutil.WithReadCommitted(ctx, h.pool, func(tx pgx.Tx) error {
 		inserted, err := h.idempotency.TryMarkAsProcessed(ctx, tx, cmd.EventID)
 		if err != nil {
 			return err
@@ -151,14 +159,24 @@ func (h *BatchHandler) RegisterReversal(ctx context.Context, cmd port.RegisterRe
 		if err := batch.RemoveTransaction(origTxID); err != nil {
 			return fmt.Errorf("remove transaction: %w", err)
 		}
+		registered = true
 		return h.batchRepo.Save(ctx, batch)
 	})
+	if err != nil {
+		return err
+	}
+	if registered {
+		h.metrics.RecordReversal(ctx)
+	}
+	return nil
 }
 
 // ProcessBatchClose procesa el cierre de lote solicitado por el terminal.
 func (h *BatchHandler) ProcessBatchClose(ctx context.Context, cmd port.ProcessBatchCloseCommand) error {
 	ctx, span := observability.StartSpan(ctx, "command.ProcessBatchClose")
 	defer span.End()
+
+	closeStart := time.Now()
 
 	log := observability.FromContext(ctx).With(
 		slog.String("terminal_id", cmd.TerminalID),
@@ -213,6 +231,7 @@ func (h *BatchHandler) ProcessBatchClose(ctx context.Context, cmd port.ProcessBa
 	if !processed {
 		return nil
 	}
+	h.metrics.RecordBatchClosed(ctx, batch.Currency(), batch.State().String(), time.Since(closeStart))
 
 	// Publicar BatchClosed a NATS → Notification BC
 	if err := h.publisher.PublishBatchClosed(ctx, batch); err != nil {
