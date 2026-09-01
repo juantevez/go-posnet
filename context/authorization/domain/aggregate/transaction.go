@@ -28,6 +28,13 @@ type Transaction struct {
 	stan   domain.STAN
 	pan    domain.PAN
 
+	// cardToken identifica la tarjeta entre transacciones sin exponer el PAN.
+	// Se persiste porque la Saga es asíncrona: cuando llega la respuesta del
+	// adquirente el aggregate ya fue releído desde Postgres, y sin el token
+	// no habría con qué bloquear la tarjeta que el emisor mandó retener.
+	// Puede ser cero: un terminal que todavía no emite token.
+	cardToken domain.CardToken
+
 	// Modo de captura
 	entryMode valueobject.EntryMode
 
@@ -63,6 +70,7 @@ func NewTransaction(
 	stan domain.STAN,
 	pan domain.PAN,
 	entryMode valueobject.EntryMode,
+	cardToken domain.CardToken,
 	emvDataBase64 string,
 	iso8583Raw []byte,
 ) (*Transaction, error) {
@@ -87,6 +95,7 @@ func NewTransaction(
 		stan:          stan,
 		pan:           pan,
 		entryMode:     entryMode,
+		cardToken:     cardToken,
 		state:         valueobject.StateReceived,
 		emvDataBase64: emvDataBase64,
 		iso8583Raw:    iso8583Raw,
@@ -222,6 +231,9 @@ func (t *Transaction) RejectedAt() *time.Time                   { return t.rejec
 func (t *Transaction) AuthCode() *domain.AuthCode {
 	return t.authCode
 }
+
+// CardToken devuelve el token de la tarjeta. Puede ser cero.
+func (t *Transaction) CardToken() domain.CardToken { return t.cardToken }
 
 func (t *Transaction) RejectionCode() *valueobject.RejectionCode {
 	return t.rejectionCode

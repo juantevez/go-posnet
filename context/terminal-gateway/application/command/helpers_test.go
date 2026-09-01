@@ -120,7 +120,7 @@ func (f *fakePublisher) PublishTransactionReceived(context.Context, *aggregate.P
 }
 
 func (f *fakePublisher) BuildTransactionReceived(
-	_ context.Context, _ *aggregate.PaymentSession, _ []byte, _ string, _ string, _ string,
+	_ context.Context, _ *aggregate.PaymentSession, _ []byte, _ string, _ string, _ string, _ string,
 ) (string, string, []byte, error) {
 	if f.buildErr != nil {
 		return "", "", nil, f.buildErr

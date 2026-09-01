@@ -25,7 +25,7 @@ func intPtr(i int) *int       { return &i }
 func TestSave_Success(t *testing.T) {
 	pool := newMockPool(t)
 	pool.ExpectExec("INSERT INTO pn_authorization.transactions").
-		WithArgs(anyArgs(20)...).
+		WithArgs(anyArgs(21)...).
 		WillReturnResult(pgxmock.NewResult("INSERT", 1))
 
 	repo := postgres.NewTransactionRepo(pool)
@@ -37,7 +37,7 @@ func TestSave_Success(t *testing.T) {
 func TestSave_ExecError(t *testing.T) {
 	pool := newMockPool(t)
 	pool.ExpectExec("INSERT INTO pn_authorization.transactions").
-		WithArgs(anyArgs(20)...).
+		WithArgs(anyArgs(21)...).
 		WillReturnError(errors.New("connection reset"))
 
 	repo := postgres.NewTransactionRepo(pool)
@@ -61,6 +61,7 @@ func TestSave_ApprovedTransactionArgs(t *testing.T) {
 			intPtr(tx.FraudDecision().Score), strPtr(tx.FraudDecision().Decision),
 			tx.EMVDataBase64(), tx.ISO8583Raw(),
 			tx.ReceivedAt(), tx.AuthorizedAt(), (*time.Time)(nil),
+			(*string)(nil), // card_token — la transacción de prueba no trae token
 		).
 		WillReturnResult(pgxmock.NewResult("INSERT", 1))
 
@@ -85,6 +86,7 @@ func TestSave_RejectedTransactionArgs(t *testing.T) {
 			(*int)(nil), (*string)(nil), // sin fraud decision — Reject() directo desde RECEIVED
 			tx.EMVDataBase64(), tx.ISO8583Raw(),
 			tx.ReceivedAt(), (*time.Time)(nil), tx.RejectedAt(),
+			(*string)(nil), // card_token — la transacción de prueba no trae token
 		).
 		WillReturnResult(pgxmock.NewResult("INSERT", 1))
 

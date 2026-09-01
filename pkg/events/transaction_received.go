@@ -17,6 +17,7 @@ type TransactionReceivedPayload struct {
 	EntryMode     string `json:"entry_mode"`   // CHIP | CONTACTLESS | MAGSTRIPE
 	CardLast4     string `json:"card_last4"`   // Solo últimos 4 dígitos
 	CardNetwork   string `json:"card_network"` // VISA | MASTERCARD | AMEX | CABAL...
+	CardToken     string `json:"card_token"`   // HMAC-SHA256(PAN) en hex, derivado en el borde. Vacío si el terminal no lo emite.
 	EMVDataBase64 string `json:"emv_data_b64"` // Tags EMV cifrados en base64 (reenviados al adquirente)
 	ISO8583Raw    []byte `json:"iso8583_raw"`  // Mensaje original para auditoría
 	ReceivedAt    string `json:"received_at"`  // RFC3339 UTC

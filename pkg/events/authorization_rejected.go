@@ -13,6 +13,10 @@ package events
 //   - FRAUD       → motor antifraude interno
 //   - TIMEOUT     → el adquirente no respondió a tiempo
 //   - VALIDATION  → error de validación local (formato, límites)
+//
+// CaptureCard viaja resuelto en el payload — no derivado del código por cada
+// consumer — para que ninguno tenga que replicar la semántica ISO 8583 ni
+// pueda desincronizarse de la decisión que tomó Authorization.
 type AuthorizationRejectedPayload struct {
 	TransactionID   string `json:"transaction_id"`
 	TerminalID      string `json:"terminal_id"`
@@ -20,6 +24,7 @@ type AuthorizationRejectedPayload struct {
 	RejectionCode   string `json:"rejection_code"`   // ISO 8583: "51","54","05"... o "FRAUD_REJECTED","TIMEOUT"
 	RejectionReason string `json:"rejection_reason"` // Descripción legible para logs y comprobante
 	IsRetryable     bool   `json:"is_retryable"`     // ¿El cliente puede reintentar con otro medio?
+	CaptureCard     bool   `json:"capture_card"`     // "pick-up card": el terminal debe retener la tarjeta (ISO 04/41/43)
 	Source          string `json:"source"`           // ACQUIRER | FRAUD | TIMEOUT | VALIDATION
 	AmountCents     int64  `json:"amount_cents"`
 	Currency        string `json:"currency"`

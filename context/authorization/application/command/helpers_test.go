@@ -50,6 +50,39 @@ func (f *fakeRepo) ExistsByID(_ context.Context, _ domain.TransactionID) (bool, 
 	return false, nil
 }
 
+// ─── fakeBlockedCards ────────────────────────────────────────────────────────
+
+type fakeBlockedCards struct {
+	blocked    bool
+	isBlockErr error
+
+	blockErr   error
+	blockCalls []blockCall
+}
+
+type blockCall struct {
+	token  domain.CardToken
+	reason string
+	txID   domain.TransactionID
+}
+
+var _ repository.BlockedCardRepository = (*fakeBlockedCards)(nil)
+
+func (f *fakeBlockedCards) IsBlocked(_ context.Context, _ domain.CardToken) (bool, error) {
+	if f.isBlockErr != nil {
+		return false, f.isBlockErr
+	}
+	return f.blocked, nil
+}
+
+func (f *fakeBlockedCards) Block(_ context.Context, token domain.CardToken, reason string, txID domain.TransactionID) error {
+	f.blockCalls = append(f.blockCalls, blockCall{token: token, reason: reason, txID: txID})
+	return f.blockErr
+}
+
+// testCardToken es un HMAC-SHA256 de ejemplo: 64 hex en minúscula.
+const testCardToken = "3b1f8a2c9d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8"
+
 // ─── fakeAcquirer ────────────────────────────────────────────────────────────
 
 type fakeAcquirer struct {
@@ -151,6 +184,7 @@ func newValidTransaction(t *testing.T) *aggregate.Transaction {
 		mustSTAN(t, 1),
 		mustPAN(t),
 		valueobject.EntryModeChip,
+		domain.CardToken{},
 		"emv-data-base64",
 		[]byte{0xAA, 0xBB},
 	)

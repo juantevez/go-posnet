@@ -35,7 +35,9 @@ type EventPublisher interface {
 	//
 	// cardLast4 y cardNetwork se reciben del ProcessPaymentCommand: en el flujo QR
 	// vienen del payload del cliente; en ISO 8583 real los parsearía el adaptador.
-	BuildTransactionReceived(ctx context.Context, session *aggregate.PaymentSession, iso8583Raw []byte, emvDataBase64 string, cardLast4, cardNetwork string) (subject, eventID string, payload []byte, err error)
+	// cardToken es el HMAC del PAN derivado en el borde; vacío si el terminal
+	// todavía no lo emite — en ese caso la tarjeta no puede ser bloqueada.
+	BuildTransactionReceived(ctx context.Context, session *aggregate.PaymentSession, iso8583Raw []byte, emvDataBase64 string, cardLast4, cardNetwork, cardToken string) (subject, eventID string, payload []byte, err error)
 
 	// PublishReversalRequested publica la solicitud de anulación.
 	// Consumido por: Authorization BC.

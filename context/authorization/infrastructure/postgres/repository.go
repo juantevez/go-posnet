@@ -48,7 +48,8 @@ func (r *TransactionRepo) Save(ctx context.Context, tx *aggregate.Transaction) e
 			stan, auth_code, rejection_code, rejection_source,
 			fraud_score, fraud_decision,
 			emv_data_b64, iso8583_raw,
-			created_at, authorized_at, rejected_at
+			created_at, authorized_at, rejected_at,
+			card_token
 		) VALUES (
 			$1, $2, $3,
 			$4, $5, $6,
@@ -56,7 +57,8 @@ func (r *TransactionRepo) Save(ctx context.Context, tx *aggregate.Transaction) e
 			$10, $11, $12, $13,
 			$14, $15,
 			$16, $17,
-			$18, $19, $20
+			$18, $19, $20,
+			$21
 		)
 		ON CONFLICT (id) DO UPDATE SET
 			state           = EXCLUDED.state,
@@ -92,6 +94,15 @@ func (r *TransactionRepo) Save(ctx context.Context, tx *aggregate.Transaction) e
 		fraudDecision = &fd
 	}
 
+	// El token va como NULL cuando el terminal no lo emite: así la columna
+	// distingue "sin token" de "token vacío" y el índice único no agrupa
+	// todas las transacciones sin token bajo una misma clave.
+	var cardToken *string
+	if !tx.CardToken().IsZero() {
+		ct := tx.CardToken().String()
+		cardToken = &ct
+	}
+
 	_, err := r.pool.Exec(ctx, query,
 		tx.ID().String(),
 		tx.TerminalID().String(),
@@ -113,6 +124,7 @@ func (r *TransactionRepo) Save(ctx context.Context, tx *aggregate.Transaction) e
 		tx.ReceivedAt(),
 		tx.AuthorizedAt(),
 		tx.RejectedAt(),
+		cardToken,
 	)
 	if err != nil {
 		return fmt.Errorf("TransactionRepo.Save: exec upsert: %w", err)
@@ -130,7 +142,8 @@ func (r *TransactionRepo) FindByID(ctx context.Context, id domain.TransactionID)
 			stan, auth_code, rejection_code, rejection_source,
 			fraud_score, fraud_decision, fraud_rules_hit,
 			emv_data_b64, iso8583_raw,
-			created_at, authorized_at, rejected_at
+			created_at, authorized_at, rejected_at,
+			card_token
 		FROM pn_authorization.transactions
 		WHERE id = $1
 	`
@@ -154,7 +167,8 @@ func (r *TransactionRepo) FindBySTAN(
 			stan, auth_code, rejection_code, rejection_source,
 			fraud_score, fraud_decision, fraud_rules_hit,
 			emv_data_b64, iso8583_raw,
-			created_at, authorized_at, rejected_at
+			created_at, authorized_at, rejected_at,
+			card_token
 		FROM pn_authorization.transactions
 		WHERE terminal_id = $1
 		  AND stan = $2
@@ -227,6 +241,7 @@ type txRow struct {
 	CreatedAt       time.Time
 	AuthorizedAt    *time.Time
 	RejectedAt      *time.Time
+	CardToken       *string
 }
 
 func scanTransaction(row pgx.Row) (*aggregate.Transaction, error) {
@@ -239,6 +254,7 @@ func scanTransaction(row pgx.Row) (*aggregate.Transaction, error) {
 		&r.FraudScore, &r.FraudDecision, &r.FraudRulesHit,
 		&r.EMVDataB64, &r.ISO8583Raw,
 		&r.CreatedAt, &r.AuthorizedAt, &r.RejectedAt,
+		&r.CardToken,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -264,6 +280,13 @@ func scanTransaction(row pgx.Row) (*aggregate.Transaction, error) {
 	pan, _ := domain.NewPAN(r.PanLast4, network)
 	entryMode, _ := valueobject.ParseEntryMode(r.EntryMode)
 
+	// Un token malformado en la base se trata como ausente: degradar a "no
+	// bloqueable" es preferible a que FindByID falle y frene la Saga entera.
+	var cardToken domain.CardToken
+	if r.CardToken != nil {
+		cardToken, _ = domain.ParseOptionalCardToken(*r.CardToken)
+	}
+
 	// Reconstruir FraudDecision si está disponible
 	var fraudDecision valueobject.FraudDecision
 	if r.FraudScore != nil && r.FraudDecision != nil {
@@ -283,6 +306,7 @@ func scanTransaction(row pgx.Row) (*aggregate.Transaction, error) {
 		STAN:            stan,
 		PAN:             pan,
 		EntryMode:       entryMode,
+		CardToken:       cardToken,
 		State:           valueobject.TransactionState(r.State),
 		FraudDecision:   fraudDecision,
 		AuthCode:        r.AuthCode,

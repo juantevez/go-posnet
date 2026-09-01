@@ -115,6 +115,7 @@ func (s *Subscriber) handleTransactionReceived(msg *natsclient.Msg) {
 		EntryMode:     payload.EntryMode,
 		CardLast4:     payload.CardLast4,
 		CardNetwork:   payload.CardNetwork,
+		CardToken:     payload.CardToken,
 		EMVDataBase64: payload.EMVDataBase64,
 		ISO8583Raw:    payload.ISO8583Raw,
 		ReceivedAt:    payload.ReceivedAt,

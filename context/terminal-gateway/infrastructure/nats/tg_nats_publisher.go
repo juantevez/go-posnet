@@ -36,7 +36,7 @@ func (p *EventPublisher) PublishTransactionReceived(
 		"PaymentSession",
 		session.ID().String(),
 		"",
-		p.buildTransactionReceivedPayload(session, iso8583Raw, emvDataBase64, "", ""),
+		p.buildTransactionReceivedPayload(session, iso8583Raw, emvDataBase64, "", "", ""),
 	)
 	if err != nil {
 		return fmt.Errorf("tg publisher: publish TransactionReceived: %w", err)
@@ -55,6 +55,7 @@ func (p *EventPublisher) BuildTransactionReceived(
 	emvDataBase64 string,
 	cardLast4 string,
 	cardNetwork string,
+	cardToken string,
 ) (subject, eventID string, payload []byte, err error) {
 	eventID, payload, err = p.pub.Build(ctx,
 		events.SubjectTransactionReceived,
@@ -63,7 +64,7 @@ func (p *EventPublisher) BuildTransactionReceived(
 		"PaymentSession",
 		session.ID().String(),
 		"",
-		p.buildTransactionReceivedPayload(session, iso8583Raw, emvDataBase64, cardLast4, cardNetwork),
+		p.buildTransactionReceivedPayload(session, iso8583Raw, emvDataBase64, cardLast4, cardNetwork, cardToken),
 	)
 	if err != nil {
 		return "", "", nil, fmt.Errorf("tg publisher: build TransactionReceived: %w", err)
@@ -77,6 +78,7 @@ func (p *EventPublisher) buildTransactionReceivedPayload(
 	emvDataBase64 string,
 	cardLast4 string,
 	cardNetwork string,
+	cardToken string,
 ) events.TransactionReceivedPayload {
 	return events.TransactionReceivedPayload{
 		TransactionID: session.ID().String(),
@@ -88,6 +90,7 @@ func (p *EventPublisher) buildTransactionReceivedPayload(
 		EntryMode:     session.Channel().ToEntryMode(),
 		CardNetwork:   cardNetwork,
 		CardLast4:     cardLast4,
+		CardToken:     cardToken,
 		EMVDataBase64: emvDataBase64,
 		ISO8583Raw:    iso8583Raw,
 		ReceivedAt:    time.Now().UTC().Format(time.RFC3339),

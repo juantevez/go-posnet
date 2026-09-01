@@ -80,6 +80,7 @@ func newValidTransaction(t *testing.T) *aggregate.Transaction {
 		mustSTAN(t, 1),
 		mustPAN(t),
 		valueobject.EntryModeChip,
+		domain.CardToken{},
 		"emv-data-base64",
 		[]byte{0xAA, 0xBB},
 	)
@@ -136,6 +137,7 @@ var txColumns = []string{
 	"fraud_score", "fraud_decision", "fraud_rules_hit",
 	"emv_data_b64", "iso8583_raw",
 	"created_at", "authorized_at", "rejected_at",
+	"card_token",
 }
 
 // rowFixture arma los valores de una fila de pn_authorization.transactions.
@@ -159,6 +161,7 @@ type rowFixture struct {
 	iso8583Raw                       []byte
 	createdAt                        time.Time
 	authorizedAt, rejectedAt         *time.Time
+	cardToken                        *string
 }
 
 func newRowFixture(t *testing.T) rowFixture {
@@ -189,5 +192,6 @@ func (f rowFixture) rows() *pgxmock.Rows {
 		f.fraudScore, f.fraudDecision, f.fraudRulesHit,
 		f.emvDataB64, f.iso8583Raw,
 		f.createdAt, f.authorizedAt, f.rejectedAt,
+		f.cardToken,
 	)
 }

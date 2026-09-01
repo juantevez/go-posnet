@@ -1,6 +1,10 @@
 package valueobject
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/juantevez/go-posnet/pkg/domain"
+)
 
 // ─── RejectionCode ───────────────────────────────────────────────────────────
 
@@ -19,26 +23,30 @@ const (
 	SourceFraud      RejectionSource = "FRAUD"      // Motor antifraude interno
 	SourceTimeout    RejectionSource = "TIMEOUT"    // Sin respuesta del adquirente
 	SourceValidation RejectionSource = "VALIDATION" // Validación local del terminal/backend
+	SourceBlocklist  RejectionSource = "BLOCKLIST"  // Tarjeta en la blocklist interna
 )
 
 // Códigos ISO 8583 comunes
 const (
-	ISO_APPROVED             = "00"
-	ISO_DO_NOT_HONOR         = "05"
-	ISO_INVALID_TRANSACTION  = "12"
-	ISO_INVALID_AMOUNT       = "13"
-	ISO_CARD_NOT_FOUND       = "14"
-	ISO_FORMAT_ERROR         = "30"
-	ISO_INSUFFICIENT_FUNDS   = "51"
-	ISO_EXPIRED_CARD         = "54"
-	ISO_INCORRECT_PIN        = "55"
-	ISO_NOT_PERMITTED        = "57"
-	ISO_SUSPECTED_FRAUD      = "59"
-	ISO_EXCEEDS_LIMIT        = "61"
-	ISO_RESTRICTED_CARD      = "62"
-	ISO_SECURITY_VIOLATION   = "63"
-	ISO_ISSUER_UNAVAILABLE   = "91"
-	ISO_SYSTEM_MALFUNCTION   = "96"
+	ISO_APPROVED            = "00"
+	ISO_CAPTURE_CARD        = domain.ISOCaptureCard
+	ISO_DO_NOT_HONOR        = "05"
+	ISO_INVALID_TRANSACTION = "12"
+	ISO_INVALID_AMOUNT      = "13"
+	ISO_CARD_NOT_FOUND      = "14"
+	ISO_FORMAT_ERROR        = "30"
+	ISO_LOST_CARD           = domain.ISOLostCard
+	ISO_STOLEN_CARD         = domain.ISOStolenCard
+	ISO_INSUFFICIENT_FUNDS  = "51"
+	ISO_EXPIRED_CARD        = "54"
+	ISO_INCORRECT_PIN       = "55"
+	ISO_NOT_PERMITTED       = "57"
+	ISO_SUSPECTED_FRAUD     = "59"
+	ISO_EXCEEDS_LIMIT       = "61"
+	ISO_RESTRICTED_CARD     = "62"
+	ISO_SECURITY_VIOLATION  = "63"
+	ISO_ISSUER_UNAVAILABLE  = "91"
+	ISO_SYSTEM_MALFUNCTION  = "96"
 )
 
 // retryableCodes son códigos donde tiene sentido reintentar la transacción.
@@ -49,11 +57,14 @@ var retryableCodes = map[string]bool{
 
 // isoDescriptions mapea código → descripción legible para logs y comprobantes.
 var isoDescriptions = map[string]string{
+	ISO_CAPTURE_CARD:        "Capture Card",
 	ISO_DO_NOT_HONOR:        "Do Not Honor",
 	ISO_INVALID_TRANSACTION: "Invalid Transaction",
 	ISO_INVALID_AMOUNT:      "Invalid Amount",
 	ISO_CARD_NOT_FOUND:      "Card Not Found",
 	ISO_FORMAT_ERROR:        "Format Error",
+	ISO_LOST_CARD:           "Lost Card - Pick Up",
+	ISO_STOLEN_CARD:         "Stolen Card - Pick Up",
 	ISO_INSUFFICIENT_FUNDS:  "Insufficient Funds",
 	ISO_EXPIRED_CARD:        "Expired Card",
 	ISO_INCORRECT_PIN:       "Incorrect PIN",
@@ -64,6 +75,8 @@ var isoDescriptions = map[string]string{
 	ISO_SECURITY_VIOLATION:  "Security Violation",
 	ISO_ISSUER_UNAVAILABLE:  "Issuer Unavailable",
 	ISO_SYSTEM_MALFUNCTION:  "System Malfunction",
+
+	domain.CodeCardBlocked: "Card Blocked - Pick Up",
 }
 
 // NewRejectionFromISO crea un RejectionCode a partir de un código ISO 8583.
@@ -84,6 +97,15 @@ func NewRejectionFromTimeout() RejectionCode {
 	return RejectionCode{code: "TIMEOUT", source: SourceTimeout}
 }
 
+// NewRejectionFromBlocklist crea un RejectionCode para tarjetas bloqueadas.
+//
+// Es una fuente propia y no VALIDATION porque arrastra autoridad del emisor:
+// la tarjeta entró a la blocklist por un 41/43 previo, así que el rechazo
+// vuelve a ordenar la retención del plástico.
+func NewRejectionFromBlocklist() RejectionCode {
+	return RejectionCode{code: domain.CodeCardBlocked, source: SourceBlocklist}
+}
+
 // NewRejectionFromValidation crea un RejectionCode para errores de validación local.
 func NewRejectionFromValidation(reason string) RejectionCode {
 	return RejectionCode{code: reason, source: SourceValidation}
@@ -98,6 +120,24 @@ func (r RejectionCode) Description() string {
 		return desc
 	}
 	return fmt.Sprintf("Rejection code: %s", r.code)
+}
+
+// RequiresCardCapture indica si el terminal debe retener la tarjeta
+// ("pick-up card") en lugar de devolverla al portador.
+//
+// Solo un rechazo del adquirente puede ordenar la retención: los rechazos
+// locales (antifraude, timeout, validación) no tienen autoridad del emisor
+// para retener el plástico, aunque su código coincida por casualidad.
+func (r RejectionCode) RequiresCardCapture() bool {
+	switch r.source {
+	case SourceAcquirer:
+		return domain.RequiresCardCapture(r.code)
+	case SourceBlocklist:
+		// El bloqueo se originó en un 41/43 del emisor; esa orden sigue vigente.
+		return true
+	default:
+		return false
+	}
 }
 
 // IsRetryable indica si tiene sentido reintentar la transacción.

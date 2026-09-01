@@ -78,6 +78,7 @@ func (p *EventPublisher) PublishRejected(ctx context.Context, tx *aggregate.Tran
 		RejectionCode:   rc.Code(),
 		RejectionReason: rc.Description(),
 		IsRetryable:     rc.IsRetryable(),
+		CaptureCard:     rc.RequiresCardCapture(),
 		Source:          string(rc.Source()),
 		AmountCents:     tx.Amount().Cents(),
 		Currency:        tx.Amount().Currency().String(),

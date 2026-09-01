@@ -185,6 +185,7 @@ func newValidTransaction(t *testing.T) *aggregate.Transaction {
 		mustSTAN(t, 1),
 		mustPAN(t),
 		valueobject.EntryModeChip,
+		domain.CardToken{},
 		"emv-data-base64",
 		[]byte{0xAA, 0xBB},
 	)

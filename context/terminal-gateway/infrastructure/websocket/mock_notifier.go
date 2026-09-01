@@ -28,6 +28,7 @@ func (m *MockNotifier) NotifyResult(ctx context.Context, session *aggregate.Paym
 	slog.Info("mock notifier: auth result",
 		slog.String("session_id", session.ID().String()),
 		slog.String("state", session.State().String()),
+		slog.Bool("capture_card", session.RequiresCardCapture()),
 	)
 	return nil
 }

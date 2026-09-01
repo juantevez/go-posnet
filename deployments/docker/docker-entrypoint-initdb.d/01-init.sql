@@ -28,11 +28,29 @@ CREATE TABLE IF NOT EXISTS pn_authorization.transactions (
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     authorized_at       TIMESTAMPTZ,
     rejected_at         TIMESTAMPTZ,
-    settlement_batch_id UUID
+    settlement_batch_id UUID,
+
+    -- HMAC del PAN derivado en el borde. NULL si el terminal no lo emite.
+    -- Se persiste porque la Saga es asíncrona: la respuesta del adquirente
+    -- llega cuando el aggregate ya fue releído desde esta tabla.
+    card_token          CHAR(64)
 );
+CREATE INDEX IF NOT EXISTS idx_auth_txn_card_token
+    ON pn_authorization.transactions(card_token)
+    WHERE card_token IS NOT NULL;
 CREATE TABLE IF NOT EXISTS pn_authorization.processed_events (
     event_id     UUID        PRIMARY KEY,
     processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Blocklist de tarjetas: se indexa por card_token (HMAC del PAN derivado en el
+-- borde) porque el PAN completo nunca llega al backend. No se guarda last4:
+-- no es una clave utilizable y solo agregaría datos de tarjeta en reposo.
+CREATE TABLE IF NOT EXISTS pn_authorization.blocked_cards (
+    card_token            CHAR(64)    PRIMARY KEY,
+    reason                VARCHAR(40) NOT NULL,
+    source_transaction_id UUID,
+    blocked_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- terminal_gateway

@@ -124,6 +124,7 @@ func (s *TG_Subscriber) handleRejection(ctx context.Context, envelope events.Dom
 		RejectionCode:   payload.RejectionCode,
 		RejectionReason: payload.RejectionReason,
 		IsRetryable:     payload.IsRetryable,
+		CaptureCard:     payload.CaptureCard,
 		Source:          payload.Source,
 	}
 

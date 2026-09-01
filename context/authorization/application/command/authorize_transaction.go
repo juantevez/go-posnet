@@ -28,12 +28,21 @@ import (
 // AuthorizationHandler implementa port.AuthorizationService.
 // Orquesta la Saga de autorización completa.
 type AuthorizationHandler struct {
-	repo        repository.TransactionRepository
-	acquirer    service.AcquirerGateway
-	publisher   service.EventPublisher
-	idempotency *natsutil.IdempotencyStore
-	pool        pgutil.PgxPool
-	metrics     *Metrics // opcional; nil = sin instrumentación (tests)
+	repo         repository.TransactionRepository
+	acquirer     service.AcquirerGateway
+	publisher    service.EventPublisher
+	idempotency  *natsutil.IdempotencyStore
+	pool         pgutil.PgxPool
+	metrics      *Metrics                         // opcional; nil = sin instrumentación (tests)
+	blockedCards repository.BlockedCardRepository // opcional; nil = blocklist deshabilitada
+}
+
+// SetBlockedCards inyecta la blocklist de tarjetas. Se llama desde el wiring
+// (cmd/authorization). Si no se inyecta, la blocklist queda deshabilitada y
+// el wiring lo advierte: sigue el mismo patrón que SetMetrics para no romper
+// las firmas que construyen el handler en los tests.
+func (h *AuthorizationHandler) SetBlockedCards(r repository.BlockedCardRepository) {
+	h.blockedCards = r
 }
 
 // SetMetrics inyecta los instrumentos de negocio. Se llama desde el wiring
@@ -117,15 +126,33 @@ func (h *AuthorizationHandler) AuthorizeTransaction(ctx context.Context, cmd por
 	if err != nil {
 		return pkgerrors.NewValidationError("invalid entry_mode: " + err.Error())
 	}
+	cardToken, err := domain.ParseOptionalCardToken(cmd.CardToken)
+	if err != nil {
+		return pkgerrors.NewValidationError("invalid card_token: " + err.Error())
+	}
 
 	// ── Paso 3: Crear el aggregate ───────────────────────────────────────────
 	tx, err := aggregate.NewTransaction(
 		txID, terminalID, merchantID,
 		amount, stan, pan, entryMode,
-		cmd.EMVDataBase64, cmd.ISO8583Raw,
+		cardToken, cmd.EMVDataBase64, cmd.ISO8583Raw,
 	)
 	if err != nil {
 		return pkgerrors.NewValidationError(err.Error())
+	}
+
+	// ── Blocklist: la tarjeta fue reportada como robada/perdida ──────────────
+	// Se corta acá, antes del fraud check y del adquirente: la tarjeta ya está
+	// bloqueada, no hay nada que consultar. Si la consulta a la blocklist
+	// falla se deja seguir la Saga en vez de rechazar: un error de la base no
+	// debe convertirse en un rechazo con orden de retener el plástico.
+	blocked, err := h.isCardBlocked(ctx, cardToken)
+	if err != nil {
+		log.Error("blocklist lookup failed — continuing without the check",
+			slog.String("error", err.Error()))
+	}
+	if blocked {
+		return h.rejectBlockedCard(ctx, tx, cmd.EventID, log)
 	}
 
 	if err := tx.StartFraudCheck(); err != nil {
@@ -274,6 +301,10 @@ func (h *AuthorizationHandler) callAcquirer(
 		if err := tx.Reject(rc); err != nil {
 			return fmt.Errorf("callAcquirer: reject: %w", err)
 		}
+		// El emisor ordenó retener la tarjeta (ISO 04/41/43): además de
+		// rechazar esta transacción, la tarjeta entra a la blocklist para que
+		// el próximo intento se corte sin llegar al adquirente.
+		h.blockCard(ctx, tx, rc, log)
 	}
 
 	if err = h.repo.Save(ctx, tx); err != nil {
@@ -307,6 +338,93 @@ func (h *AuthorizationHandler) callAcquirer(
 	return nil
 }
 
+// isCardBlocked consulta la blocklist. Con la blocklist deshabilitada o sin
+// token la tarjeta nunca está bloqueada — no se puede inferir la identidad de
+// una tarjeta a partir de los últimos 4 dígitos.
+func (h *AuthorizationHandler) isCardBlocked(ctx context.Context, token domain.CardToken) (bool, error) {
+	if h.blockedCards == nil || token.IsZero() {
+		return false, nil
+	}
+	return h.blockedCards.IsBlocked(ctx, token)
+}
+
+// blockCard agrega la tarjeta a la blocklist cuando el rechazo trae orden de
+// retención. No propaga el error: el rechazo de esta transacción ya es
+// correcto y no debe revertirse porque la escritura en la blocklist falle —
+// se loguea en ERROR para que quede visible que el bloqueo no persistió.
+func (h *AuthorizationHandler) blockCard(
+	ctx context.Context,
+	tx *aggregate.Transaction,
+	rc valueobject.RejectionCode,
+	log *slog.Logger,
+) {
+	if !rc.RequiresCardCapture() {
+		return
+	}
+	if tx.CardToken().IsZero() {
+		log.Warn("issuer ordered card capture but no card token was provided — card cannot be blocked",
+			slog.String("rejection_code", rc.Code()))
+		return
+	}
+	if h.blockedCards == nil {
+		log.Warn("issuer ordered card capture but the blocklist is disabled — card not blocked",
+			slog.String("rejection_code", rc.Code()))
+		return
+	}
+	if err := h.blockedCards.Block(ctx, tx.CardToken(), rc.Code(), tx.ID()); err != nil {
+		observability.RecordError(ctx, err)
+		log.Error("failed to add card to blocklist",
+			slog.String("rejection_code", rc.Code()),
+			slog.String("error", err.Error()))
+		return
+	}
+	log.Warn("card added to blocklist by issuer capture order",
+		slog.String("rejection_code", rc.Code()),
+		slog.String("card_token", tx.CardToken().String()))
+}
+
+// rejectBlockedCard rechaza una transacción cuya tarjeta ya está bloqueada,
+// reclamando el evento en la misma transacción de base que el rechazo para
+// que un redelivery de NATS no vuelva a publicarlo.
+func (h *AuthorizationHandler) rejectBlockedCard(
+	ctx context.Context,
+	tx *aggregate.Transaction,
+	eventID string,
+	log *slog.Logger,
+) error {
+	rc := valueobject.NewRejectionFromBlocklist()
+	if err := tx.Reject(rc); err != nil {
+		return fmt.Errorf("rejectBlockedCard: reject: %w", err)
+	}
+
+	var claimed bool
+	if err := pgutil.WithReadCommitted(ctx, h.pool, func(dbTx pgx.Tx) error {
+		inserted, err := h.idempotency.TryMarkAsProcessed(ctx, dbTx, eventID)
+		if err != nil {
+			return err
+		}
+		if !inserted {
+			return nil
+		}
+		claimed = true
+		return h.repo.Save(ctx, tx)
+	}); err != nil {
+		observability.RecordError(ctx, err)
+		return fmt.Errorf("rejectBlockedCard: persist: %w", err)
+	}
+	if !claimed {
+		log.Info("event already processed — skipping")
+		return nil
+	}
+
+	h.metrics.RecordReceived(ctx)
+	log.Warn("transaction rejected — card is on the blocklist",
+		slog.String("rejection_code", rc.Code()),
+		slog.String("card_token", tx.CardToken().String()))
+	h.publishRejection(ctx, tx, log)
+	return nil
+}
+
 // persistAndPublishRejection persiste el rechazo y publica el evento.
 // El evento ya fue reclamado por TryMarkAsProcessed en ApplyFraudScore.
 func (h *AuthorizationHandler) persistAndPublishRejection(
@@ -317,13 +435,24 @@ func (h *AuthorizationHandler) persistAndPublishRejection(
 	if err := h.repo.Save(ctx, tx); err != nil {
 		return fmt.Errorf("persistAndPublishRejection: %w", err)
 	}
+	h.publishRejection(ctx, tx, log)
+	return nil
+}
+
+// publishRejection registra las métricas del rechazo y lo publica a NATS.
+// Separado de la persistencia porque los rechazos que ya se guardaron dentro
+// de una transacción de base solo necesitan esta mitad.
+func (h *AuthorizationHandler) publishRejection(
+	ctx context.Context,
+	tx *aggregate.Transaction,
+	log *slog.Logger,
+) {
 	rc := tx.RejectionCode()
 	h.metrics.RecordRejected(ctx, rc.Code(), string(rc.Source()))
 	h.metrics.RecordSagaDuration(ctx, tx.ReceivedAt(), "rejected")
 	if err := h.publisher.PublishRejected(ctx, tx); err != nil {
 		log.Error("failed to publish rejection", slog.String("error", err.Error()))
 	}
-	return nil
 }
 
 // ProcessReversal procesa la anulación de una transacción aprobada.

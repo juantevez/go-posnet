@@ -20,7 +20,7 @@ func TestNewTransaction_Success(t *testing.T) {
 	pan := mustPAN(t)
 
 	before := time.Now().UTC()
-	tx, err := aggregate.NewTransaction(id, tid, mid, amount, stan, pan, valueobject.EntryModeChip, "emv-data", []byte{0xAA})
+	tx, err := aggregate.NewTransaction(id, tid, mid, amount, stan, pan, valueobject.EntryModeChip, domain.CardToken{}, "emv-data", []byte{0xAA})
 	after := time.Now().UTC()
 	if err != nil {
 		t.Fatalf("NewTransaction() error = %v", err)
@@ -135,7 +135,7 @@ func TestNewTransaction_ValidationErrors(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			tx, err := aggregate.NewTransaction(
 				tc.id, tc.terminalID, tc.merchantID, tc.amount,
-				mustSTAN(t, 1), mustPAN(t), valueobject.EntryModeChip, "emv", nil,
+				mustSTAN(t, 1), mustPAN(t), valueobject.EntryModeChip, domain.CardToken{}, "emv", nil,
 			)
 			if err == nil {
 				t.Fatalf("NewTransaction() error = nil, want error containing %q", tc.wantErr)

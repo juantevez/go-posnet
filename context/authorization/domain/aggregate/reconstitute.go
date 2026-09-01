@@ -18,6 +18,7 @@ type ReconstituteParams struct {
 	STAN            domain.STAN
 	PAN             domain.PAN
 	EntryMode       valueobject.EntryMode
+	CardToken       domain.CardToken
 	State           valueobject.TransactionState
 	FraudDecision   valueobject.FraudDecision
 	AuthCode        *string
@@ -42,6 +43,7 @@ func Reconstitute(p ReconstituteParams) *Transaction {
 		stan:          p.STAN,
 		pan:           p.PAN,
 		entryMode:     p.EntryMode,
+		cardToken:     p.CardToken,
 		state:         p.State,
 		fraudDecision: p.FraudDecision,
 		emvDataBase64: p.EMVDataBase64,

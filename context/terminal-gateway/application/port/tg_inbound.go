@@ -55,6 +55,7 @@ type ProcessPaymentCommand struct {
 	EMVDataBase64 string
 	CardLast4     string
 	CardNetwork   string
+	CardToken     string // HMAC del PAN derivado en el borde; vacío si no se emite
 }
 
 type RequestReversalCommand struct {
@@ -97,6 +98,7 @@ type ApplyRejectionCommand struct {
 	RejectionCode   string
 	RejectionReason string
 	IsRetryable     bool
+	CaptureCard     bool // "pick-up card": el terminal debe retener la tarjeta
 	Source          string
 }
 

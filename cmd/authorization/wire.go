@@ -85,6 +85,7 @@ func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 
 	// ── Infraestructura ────────────────────────────────────────────────────────
 	txRepo := pginfra.NewTransactionRepo(pool)
+	blockedCards := pginfra.NewBlockedCardRepo(pool)
 	idempotency := natsutil.NewIdempotencyStore(pool, "pn_authorization")
 	natsPub := natsutil.NewPublisher(js)
 	eventPub := natsinfra.NewEventPublisher(natsPub)
@@ -103,6 +104,7 @@ func wire(ctx context.Context, cfg *config.Config) (*app, error) {
 		return nil, fmt.Errorf("init authorization metrics: %w", err)
 	}
 	authHandler.SetMetrics(authMetrics)
+	authHandler.SetBlockedCards(blockedCards)
 	queryHandler := query.NewTransactionQueryHandler(txRepo)
 
 	// ── Adaptadores de entrada ─────────────────────────────────────────────────

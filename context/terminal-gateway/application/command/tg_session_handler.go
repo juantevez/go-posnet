@@ -180,6 +180,7 @@ func (h *SessionHandler) ProcessPayment(ctx context.Context, cmd port.ProcessPay
 		cmd.EMVDataBase64,
 		cmd.CardLast4,
 		cmd.CardNetwork,
+		cmd.CardToken,
 	)
 	if err != nil {
 		return fmt.Errorf("ProcessPayment: build event: %w", err)
@@ -280,9 +281,22 @@ func (h *SessionHandler) ApplyRejection(ctx context.Context, cmd port.ApplyRejec
 	}
 
 	if processed {
+		if cmd.CaptureCard {
+			// El emisor ordenó retener la tarjeta. Se loguea en WARN aparte del
+			// rechazo porque es una acción física sobre el plástico del portador
+			// y debe quedar en la traza de auditoría aunque la notificación al
+			// terminal falle después.
+			observability.FromContext(ctx).Warn("issuer ordered card capture — terminal must retain the card",
+				slog.String("transaction_id", cmd.TransactionID),
+				slog.String("terminal_id", cmd.TerminalID),
+				slog.String("rejection_code", cmd.RejectionCode),
+				slog.String("rejection_reason", cmd.RejectionReason),
+			)
+		}
 		if err := h.notifier.NotifyResult(ctx, session); err != nil {
 			observability.FromContext(ctx).Error("failed to notify terminal of rejection",
 				slog.String("transaction_id", cmd.TransactionID),
+				slog.Bool("capture_card", cmd.CaptureCard),
 				slog.String("error", err.Error()),
 			)
 		}

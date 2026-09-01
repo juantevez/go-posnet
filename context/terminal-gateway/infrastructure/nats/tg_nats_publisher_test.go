@@ -122,6 +122,9 @@ func TestPublishTransactionReceived_Error(t *testing.T) {
 	}
 }
 
+// testCardToken es un HMAC-SHA256 de ejemplo: 64 hex en minúscula.
+const testCardToken = "3b1f8a2c9d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8"
+
 // ─── BuildTransactionReceived ───────────────────────────────────────────────────
 
 func TestBuildTransactionReceived_Success(t *testing.T) {
@@ -130,7 +133,7 @@ func TestBuildTransactionReceived_Success(t *testing.T) {
 	session := newSession(t, valueobject.ChannelMagstripe)
 
 	subject, eventID, payloadBytes, err := p.BuildTransactionReceived(
-		context.Background(), session, []byte("iso-raw"), "emv-b64", "1234", "VISA",
+		context.Background(), session, []byte("iso-raw"), "emv-b64", "1234", "VISA", testCardToken,
 	)
 	if err != nil {
 		t.Fatalf("BuildTransactionReceived() error = %v", err)
@@ -162,6 +165,9 @@ func TestBuildTransactionReceived_Success(t *testing.T) {
 	}
 	if payload.CardNetwork != "VISA" {
 		t.Errorf("CardNetwork = %q, want %q", payload.CardNetwork, "VISA")
+	}
+	if payload.CardToken != testCardToken {
+		t.Errorf("CardToken = %q, want %q", payload.CardToken, testCardToken)
 	}
 	if payload.EntryMode != valueobject.ChannelMagstripe.ToEntryMode() {
 		t.Errorf("EntryMode = %q, want %q", payload.EntryMode, valueobject.ChannelMagstripe.ToEntryMode())

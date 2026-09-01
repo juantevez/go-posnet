@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	valueobject "github.com/juantevez/go-posnet/context/terminal-gateway/domain/valueobject"
 	"github.com/juantevez/go-posnet/context/terminal-gateway/domain/event"
+	valueobject "github.com/juantevez/go-posnet/context/terminal-gateway/domain/valueobject"
 	"github.com/juantevez/go-posnet/pkg/domain"
 )
 
@@ -190,7 +190,19 @@ func (s *PaymentSession) ExpiresAt() time.Time                { return s.expires
 func (s *PaymentSession) AuthCode() string                    { return s.authCode }
 func (s *PaymentSession) RejectionCode() string               { return s.rejectionCode }
 func (s *PaymentSession) RejectionReason() string             { return s.rejectionReason }
-func (s *PaymentSession) CreatedAt() time.Time                { return s.createdAt }
-func (s *PaymentSession) ClosedAt() *time.Time                { return s.closedAt }
-func (s *PaymentSession) DomainEvents() []event.DomainEvent   { return s.domainEvents }
-func (s *PaymentSession) ClearDomainEvents()                  { s.domainEvents = nil }
+
+// RequiresCardCapture indica si el terminal debe retener la tarjeta
+// ("pick-up card") en vez de devolverla al portador.
+//
+// Se deriva del código de rechazo ya persistido en lugar de guardarse en una
+// columna propia: así una sesión releída desde Postgres da la misma respuesta
+// que la instrucción que Authorization mandó en el evento, sin que ambas
+// puedan divergir. Los rechazos no-ISO (FRAUD_REJECTED, TIMEOUT) nunca
+// coinciden con un código de captura.
+func (s *PaymentSession) RequiresCardCapture() bool {
+	return domain.RequiresCardCapture(s.rejectionCode)
+}
+func (s *PaymentSession) CreatedAt() time.Time              { return s.createdAt }
+func (s *PaymentSession) ClosedAt() *time.Time              { return s.closedAt }
+func (s *PaymentSession) DomainEvents() []event.DomainEvent { return s.domainEvents }
+func (s *PaymentSession) ClearDomainEvents()                { s.domainEvents = nil }

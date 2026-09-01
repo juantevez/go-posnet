@@ -47,6 +47,7 @@ type AuthorizeTransactionCommand struct {
 	EntryMode     string
 	CardLast4     string
 	CardNetwork   string
+	CardToken     string // HMAC del PAN derivado en el borde; vacío si no se emite
 	EMVDataBase64 string
 	ISO8583Raw    []byte
 	ReceivedAt    string
